@@ -177,10 +177,15 @@ func (r *WorkloadReconciler) reportAnnotationErrors(obj client.Object, cm *modev
 
 // warn emits a Warning event, cutting the note to the length the API allows.
 func (r *WorkloadReconciler) warn(obj client.Object, related runtime.Object, reason, action, note string) {
-	if len(note) > maxEventNote {
-		note = strings.ToValidUTF8(note[:maxEventNote-3], "") + "..."
+	r.Recorder.Eventf(obj, related, corev1.EventTypeWarning, reason, action, "%s", truncate(note, maxEventNote))
+}
+
+// truncate cuts s to at most n bytes, ending it with "..." if it was cut.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
 	}
-	r.Recorder.Eventf(obj, related, corev1.EventTypeWarning, reason, action, "%s", note)
+	return strings.ToValidUTF8(s[:n-3], "") + "..."
 }
 
 // SetupWithManager registers the reconciler for its kind.
@@ -217,13 +222,13 @@ func (r *WorkloadReconciler) workloadsFollowing(ctx context.Context, cm client.O
 // that follow a ClusterMode using it, so their annotations are checked again
 // when its modes change.
 func (r *WorkloadReconciler) workloadsUsing(ctx context.Context, def client.Object) []reconcile.Request {
-	var cms modev1alpha1.ClusterModeList
-	if err := r.List(ctx, &cms, client.MatchingFields{indexDefinition: def.GetName()}); err != nil {
+	cms, err := listClusterModesUsing(ctx, r, def.GetName())
+	if err != nil {
 		logf.FromContext(ctx).Error(err, "Failed to list ClusterModes", "definition", def.GetName())
 		return nil
 	}
 	var reqs []reconcile.Request
-	for _, cm := range cms.Items {
+	for _, cm := range cms {
 		reqs = append(reqs, r.requestsFor(ctx, cm.Name)...)
 	}
 	return reqs

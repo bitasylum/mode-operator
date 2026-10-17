@@ -328,6 +328,8 @@ var _ = Describe("Workload reconciler", func() {
 		By("applying the mode once the definition has every mode the annotation names")
 		setDefinitionModes(narrow, normal, "offpeak", standby)
 		Eventually(replicasOf(dep)).Should(Equal(int32(3)))
+		// The API server only accepts the new mode once status.modes has it.
+		waitForStatusModes(mode, normal, "offpeak", standby)
 		applyMode(mode, narrow, "offpeak")
 		Eventually(replicasOf(dep)).Should(Equal(int32(1)))
 

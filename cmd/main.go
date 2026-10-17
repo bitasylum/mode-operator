@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -83,6 +84,10 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	var settleTimeout time.Duration
+	flag.DurationVar(&settleTimeout, "settle-timeout", 10*time.Minute,
+		"How long a workload may take to reach its replicas before it counts as Stalled. "+
+			"A workload's mode.bitasylum.org/settle-timeout annotation overrides it.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -90,6 +95,10 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	if settleTimeout <= 0 {
+		setupLog.Error(nil, "--settle-timeout must be greater than 0", "settle-timeout", settleTimeout)
+		os.Exit(1)
+	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -174,17 +183,10 @@ func main() {
 		Cache:                  cache.Options{ByObject: cacheByObject},
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "mode-operator.mode.bitasylum.org",
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
+		// Hand the Lease over at once on shutdown, so a rollout doesn't leave
+		// the operator without a leader for the Lease duration. This is safe
+		// because the binary exits as soon as the manager stops.
+		LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")
@@ -207,8 +209,9 @@ func main() {
 		}
 	}
 	if err := (&controller.ClusterModeReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:               mgr.GetClient(),
+		Kinds:                kinds,
+		DefaultSettleTimeout: settleTimeout,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "clustermode")
 		os.Exit(1)

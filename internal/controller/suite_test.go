@@ -91,7 +91,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	By("starting the manager with the workload reconcilers, set up as in cmd/main.go")
+	By("starting the manager with every reconciler, set up as in cmd/main.go")
 	kinds := BuiltinKinds()
 	byObject, err := CacheByObject(kinds)
 	Expect(err).NotTo(HaveOccurred())
@@ -110,6 +110,11 @@ var _ = BeforeSuite(func() {
 			Recorder: mgr.GetEventRecorder(FieldManager),
 		}).SetupWithManager(mgr)).To(Succeed())
 	}
+	Expect((&ClusterModeReconciler{
+		Client:               mgr.GetClient(),
+		Kinds:                kinds,
+		DefaultSettleTimeout: 10 * time.Minute,
+	}).SetupWithManager(mgr)).To(Succeed())
 	cachedClient = mgr.GetClient()
 	go func() {
 		defer GinkgoRecover()

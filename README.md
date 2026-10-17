@@ -10,10 +10,13 @@ The design is in the parent repo:
 Section 9.1 describes this repo's layout.
 
 Status:
-- **Done:** the `ClusterMode` and `ClusterModeDefinition` APIs and their
-  validation, and the Deployment and StatefulSet reconcilers. The
-  reconcilers apply the current mode, including the scale-to-zero delay.
-- **Next:** writing `ClusterMode` status, then the KubeVirt kinds.
+- **Done:**
+  - the `ClusterMode` and `ClusterModeDefinition` APIs and their validation
+  - the Deployment and StatefulSet reconcilers, which apply the current mode,
+    including the scale-to-zero delay
+  - `ClusterMode` status (workload states, counts, conditions) and the
+    Prometheus metrics
+- **Next:** the KubeVirt kinds, then the Helm chart.
 
 ## Development
 

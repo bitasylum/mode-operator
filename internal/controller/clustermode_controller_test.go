@@ -17,74 +17,368 @@ limitations under the License.
 package controller
 
 import (
-	"context"
+	"encoding/json"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
+	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
 )
 
-var _ = Describe("ClusterMode Controller", func() {
-	Context("When reconciling a resource", func() {
-		const (
-			resourceName      = "test-resource"
-			resourceNamespace = "default"
-		)
+// These specs run the status reconciler alongside the workload reconcilers.
+// With no Deployment or StatefulSet controller, markReady plays the part of
+// the pods becoming ready.
 
-		ctx := context.Background()
+func statusOf(name string) func() modev1alpha1.ClusterModeStatus {
+	return func() modev1alpha1.ClusterModeStatus {
+		cm := &modev1alpha1.ClusterMode{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, cm)).To(Succeed())
+		return cm.Status
+	}
+}
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: resourceNamespace,
+// conditionOf returns a function that reads a condition as "Status/Reason".
+func conditionOf(name, conditionType string) func() string {
+	return func() string {
+		c := meta.FindStatusCondition(statusOf(name)().Conditions, conditionType)
+		if c == nil {
+			return ""
 		}
-		clustermode := &modev1alpha1.ClusterMode{}
+		return string(c.Status) + "/" + c.Reason
+	}
+}
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind ClusterMode")
-			err := k8sClient.Get(ctx, typeNamespacedName, clustermode)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &modev1alpha1.ClusterMode{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: resourceNamespace,
-					},
-					Spec: modev1alpha1.ClusterModeSpec{
-						Definition: "standard",
-						Mode:       "standby",
-					},
+func countsOf(name string) func() modev1alpha1.WorkloadCounts {
+	return func() modev1alpha1.WorkloadCounts { return statusOf(name)().Workloads }
+}
+
+// markReady sets a workload's status as its controller would once every pod
+// is ready.
+func markReady(obj client.Object) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		live := fresh(obj)
+		switch o := live.(type) {
+		case *appsv1.Deployment:
+			n := *o.Spec.Replicas
+			o.Status = appsv1.DeploymentStatus{ObservedGeneration: o.Generation, Replicas: n, ReadyReplicas: n,
+				UpdatedReplicas: n, AvailableReplicas: n}
+		case *appsv1.StatefulSet:
+			n := *o.Spec.Replicas
+			o.Status = appsv1.StatefulSetStatus{ObservedGeneration: o.Generation, Replicas: n, ReadyReplicas: n,
+				CurrentReplicas: n, UpdatedReplicas: n, AvailableReplicas: n}
+		}
+		g.Expect(k8sClient.Status().Update(ctx, live)).To(Succeed())
+	}).Should(Succeed())
+}
+
+// waitForStatusModes waits until mode-operator has copied the definition's
+// modes into the ClusterMode's status.
+func waitForStatusModes(name string, modes ...modev1alpha1.ModeName) {
+	GinkgoHelper()
+	Eventually(func() []modev1alpha1.ModeName { return statusOf(name)().Modes }).Should(ConsistOf(modes))
+}
+
+// metricSeries returns the series of a metric for one ClusterMode, as
+// "label=value,...: value".
+func metricSeries(c prometheus.Collector, clusterMode string) map[string]float64 {
+	GinkgoHelper()
+	ch := make(chan prometheus.Metric, 64)
+	go func() { c.Collect(ch); close(ch) }()
+	out := map[string]float64{}
+	for m := range ch {
+		var d dto.Metric
+		Expect(m.Write(&d)).To(Succeed())
+		var key string
+		match := false
+		for _, l := range d.GetLabel() {
+			if l.GetName() == "clustermode" {
+				match = l.GetValue() == clusterMode
+				continue
+			}
+			key += l.GetName() + "=" + l.GetValue()
+		}
+		if !match {
+			continue
+		}
+		switch {
+		case d.Gauge != nil:
+			out[key] = d.Gauge.GetValue()
+		case d.Counter != nil:
+			out[key] = d.Counter.GetValue()
+		}
+	}
+	return out
+}
+
+var _ = Describe("ClusterMode status", func() {
+	var (
+		ns   string
+		def  string
+		mode string
+	)
+	modes := []modev1alpha1.ModeName{normal, peak, "offpeak", standby}
+
+	BeforeEach(func() {
+		ns = newNamespace()
+		def = uniqueName("standard")
+		mode = uniqueName("cluster")
+		createDefinition(def, modes...)
+	})
+
+	It("copies the definition's modes, after which the API server rejects other modes", func() {
+		applyMode(mode, def, normal)
+		waitForStatusModes(mode, modes...)
+		Expect(conditionOf(mode, modev1alpha1.ConditionApplied)()).To(Equal("True/NoWorkloads"))
+
+		cm := &modev1alpha1.ClusterMode{ObjectMeta: metav1.ObjectMeta{Name: mode}}
+		err := k8sClient.Patch(ctx, cm, client.RawPatch("application/merge-patch+json", []byte(`{"spec":{"mode":"holiday"}}`)),
+			client.FieldOwner(maintainer))
+		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected the API server to reject the mode, got %v", err)
+		Expect(err.Error()).To(ContainSubstring("spec.mode must be one of the modes in the ClusterModeDefinition"))
+	})
+
+	It("reports a mode set before status.modes existed as InvalidMode, and accepts a change to a valid one", func() {
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{AnnotationReplicas: "normal=3"})
+		applyMode(mode, def, "holiday")
+		Eventually(conditionOf(mode, modev1alpha1.ConditionApplied)).Should(Equal("False/InvalidMode"))
+		Expect(conditionOf(mode, modev1alpha1.ConditionDegraded)()).To(Equal("True/InvalidMode"))
+		waitForStatusModes(mode, modes...)
+		Consistently(replicasOf(dep)).Should(Equal(int32(1)))
+
+		applyMode(mode, def, normal)
+		Eventually(replicasOf(dep)).Should(Equal(int32(3)))
+		Eventually(conditionOf(mode, modev1alpha1.ConditionApplied)).Should(Equal("True/AllApplied"))
+	})
+
+	It("reports DefinitionNotFound, then counts the workloads once the definition exists", func() {
+		later := uniqueName("later")
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{AnnotationReplicas: "normal=3"})
+		applyMode(mode, later, normal)
+		Eventually(conditionOf(mode, modev1alpha1.ConditionReady)).Should(Equal("False/DefinitionNotFound"))
+		Expect(conditionOf(mode, modev1alpha1.ConditionDegraded)()).To(Equal("True/DefinitionNotFound"))
+		Expect(statusOf(mode)().Modes).To(BeEmpty())
+		Expect(statusOf(mode)().Workloads).To(BeZero())
+
+		createDefinition(later, normal, standby)
+		Eventually(replicasOf(dep)).Should(Equal(int32(3)))
+		Eventually(countsOf(mode)).Should(HaveField("Total", int32(1)))
+		waitForStatusModes(mode, normal, standby)
+	})
+
+	It("shows workloads as Scaling until their pods are ready, then Settled", func() {
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{AnnotationReplicas: "normal=3,peak=6"})
+		sts := newStatefulSet(ns, "db", followLabels(mode), map[string]string{AnnotationReplicas: "normal=2"})
+		applyMode(mode, def, normal)
+		Eventually(replicasOf(dep)).Should(Equal(int32(3)))
+		Eventually(replicasOf(sts)).Should(Equal(int32(2)))
+		Eventually(countsOf(mode)).Should(Equal(modev1alpha1.WorkloadCounts{Total: 2, Scaling: 2}))
+		Expect(conditionOf(mode, modev1alpha1.ConditionApplied)()).To(Equal("True/AllApplied"))
+		Expect(conditionOf(mode, modev1alpha1.ConditionReady)()).To(Equal("False/Scaling"))
+		Expect(statusOf(mode)().Unsettled).To(HaveLen(2))
+
+		markReady(dep)
+		markReady(sts)
+		Eventually(countsOf(mode)).Should(Equal(modev1alpha1.WorkloadCounts{Total: 2, Settled: 2}))
+		st := statusOf(mode)()
+		Expect(st.Replicas).To(Equal(modev1alpha1.ReplicaCounts{Desired: 5, Applied: 5, Ready: 5}))
+		Expect(st.Unsettled).To(BeEmpty())
+		Expect(conditionOf(mode, modev1alpha1.ConditionReady)()).To(Equal("True/AllSettled"))
+		Expect(conditionOf(mode, modev1alpha1.ConditionDegraded)()).To(Equal("False/AsExpected"))
+		Expect(st.ObservedGeneration).To(BeNumerically(">", 0))
+
+		By("leaving the status alone once nothing changes")
+		resourceVersion := func() string {
+			cm := &modev1alpha1.ClusterMode{}
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mode}, cm)).To(Succeed())
+			return cm.ResourceVersion
+		}
+		settledAt := resourceVersion()
+		Consistently(resourceVersion, "5s").Should(Equal(settledAt))
+
+		By("going back to Scaling after a mode change, with modeChangedAt moved on")
+		changedAt := st.ModeChangedAt.Time
+		applyMode(mode, def, peak)
+		Eventually(func() string { return string(statusOf(mode)().Mode) }).Should(Equal(peak))
+		Eventually(countsOf(mode)).Should(Equal(modev1alpha1.WorkloadCounts{Total: 2, Scaling: 2}))
+		Expect(statusOf(mode)().ModeChangedAt.Time).NotTo(BeTemporally("<", changedAt))
+		markReady(dep)
+		markReady(sts)
+		Eventually(countsOf(mode)).Should(Equal(modev1alpha1.WorkloadCounts{Total: 2, Settled: 2}))
+		Expect(statusOf(mode)().Replicas).To(Equal(modev1alpha1.ReplicaCounts{Desired: 6, Applied: 6, Ready: 6}))
+	})
+
+	It("reports a workload that misses its settle timeout as Stalled", func() {
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{
+			AnnotationReplicas: "normal=3", AnnotationSettleTimeout: "2s",
+		})
+		applyMode(mode, def, normal)
+		Eventually(countsOf(mode)).Should(HaveField("Stalled", int32(1)))
+		Expect(conditionOf(mode, modev1alpha1.ConditionReady)()).To(Equal("False/Stalled"))
+		Expect(conditionOf(mode, modev1alpha1.ConditionDegraded)()).To(Equal("True/StalledWorkloads"))
+		u := statusOf(mode)().Unsettled
+		Expect(u).To(HaveLen(1))
+		Expect(u[0]).To(And(
+			HaveField("Kind", "Deployment"), HaveField("Namespace", ns), HaveField("Name", "web"),
+			HaveField("State", modev1alpha1.WorkloadStalled),
+		))
+		Expect(u[0].Message).To(ContainSubstring("settle timeout"))
+		Expect(u[0].Since).NotTo(BeNil())
+
+		markReady(dep)
+		Eventually(conditionOf(mode, modev1alpha1.ConditionDegraded)).Should(Equal("False/AsExpected"))
+	})
+
+	It("counts an invalid replicas annotation as Invalid and sets Degraded", func() {
+		newDeployment(ns, "web", followLabels(mode), map[string]string{AnnotationReplicas: "normal=x"})
+		applyMode(mode, def, normal)
+		Eventually(countsOf(mode)).Should(Equal(modev1alpha1.WorkloadCounts{Total: 1, Invalid: 1}))
+		st := statusOf(mode)()
+		Expect(st.InvalidAnnotations).To(Equal(int32(1)))
+		Expect(st.Unsettled).To(HaveLen(1))
+		Expect(st.Unsettled[0].State).To(Equal(modev1alpha1.WorkloadInvalid))
+		Expect(st.Unsettled[0].Desired).To(BeNil())
+		Expect(st.Unsettled[0].Message).To(ContainSubstring(`"normal=x"`))
+		Expect(conditionOf(mode, modev1alpha1.ConditionDegraded)()).To(Equal("True/InvalidWorkloads"))
+	})
+
+	It("reports an invalid delay at once, and counts it Invalid only while it blocks a scale to zero", func() {
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{
+			AnnotationReplicas: "normal=3", AnnotationScaleToZeroDelay: "soon",
+		})
+		applyMode(mode, def, normal)
+		Eventually(func() int32 { return statusOf(mode)().InvalidAnnotations }).Should(Equal(int32(1)))
+		Expect(conditionOf(mode, modev1alpha1.ConditionDegraded)()).To(Equal("True/InvalidWorkloads"))
+		Eventually(replicasOf(dep)).Should(Equal(int32(3)))
+		markReady(dep)
+		Eventually(countsOf(mode)).Should(Equal(modev1alpha1.WorkloadCounts{Total: 1, Settled: 1}))
+
+		applyMode(mode, def, standby)
+		Eventually(countsOf(mode)).Should(Equal(modev1alpha1.WorkloadCounts{Total: 1, Invalid: 1}))
+		Expect(statusOf(mode)().Unsettled[0].Message).To(ContainSubstring("holding 3 replicas until it is fixed"))
+	})
+
+	It("shows a pending scale to zero as Pending", func() {
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{
+			AnnotationReplicas: "normal=3", AnnotationScaleToZeroDelay: "1m",
+		})
+		applyMode(mode, def, normal)
+		Eventually(replicasOf(dep)).Should(Equal(int32(3)))
+		markReady(dep)
+		Eventually(countsOf(mode)).Should(HaveField("Settled", int32(1)))
+
+		applyMode(mode, def, standby)
+		Eventually(countsOf(mode)).Should(Equal(modev1alpha1.WorkloadCounts{Total: 1, Pending: 1}))
+		Expect(statusOf(mode)().Replicas).To(Equal(modev1alpha1.ReplicaCounts{Desired: 0, Applied: 3, Ready: 3}))
+		Expect(conditionOf(mode, modev1alpha1.ConditionApplied)()).To(Equal("False/ScaleToZeroPending"))
+		Expect(conditionOf(mode, modev1alpha1.ConditionDegraded)()).To(Equal("False/AsExpected"))
+	})
+
+	It("records which field manager set the mode", func() {
+		applyMode(mode, def, normal)
+		Eventually(func() string { return statusOf(mode)().ModeSetBy }).Should(Equal(modeManager))
+
+		mergePatch(&modev1alpha1.ClusterMode{ObjectMeta: metav1.ObjectMeta{Name: mode}}, maintainer, `{"spec":{"mode":"peak"}}`)
+		Eventually(func() string { return statusOf(mode)().ModeSetBy }).Should(Equal(maintainer))
+
+		applyMode(mode, def, normal)
+		Eventually(func() string { return statusOf(mode)().ModeSetBy }).Should(Equal(modeManager))
+	})
+
+	It("keeps each ClusterMode's counts right as a workload moves between them", func() {
+		other := uniqueName("other")
+		applyMode(mode, def, normal)
+		applyMode(other, def, peak)
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{AnnotationReplicas: "normal=3,peak=6"})
+		Eventually(countsOf(mode)).Should(HaveField("Total", int32(1)))
+		Eventually(conditionOf(other, modev1alpha1.ConditionApplied)).Should(Equal("True/NoWorkloads"))
+
+		mergePatch(dep, "kubectl-label", fmt.Sprintf(`{"metadata":{"labels":{%q:%q}}}`, LabelClusterMode, other))
+		Eventually(countsOf(other)).Should(HaveField("Total", int32(1)))
+		Eventually(countsOf(mode)).Should(HaveField("Total", int32(0)))
+	})
+
+	It("drops a workload whose label is removed from the counts", func() {
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{AnnotationReplicas: "normal=3"})
+		applyMode(mode, def, normal)
+		Eventually(countsOf(mode)).Should(HaveField("Total", int32(1)))
+
+		mergePatch(dep, "kubectl-label", fmt.Sprintf(`{"metadata":{"labels":{%q:null}}}`, LabelClusterMode))
+		Eventually(countsOf(mode)).Should(HaveField("Total", int32(0)))
+		Expect(replicasOf(dep)()).To(Equal(int32(3)))
+	})
+
+	It("marks a workload Invalid when the definition drops a mode its annotation names", func() {
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{AnnotationReplicas: "normal=3,offpeak=1"})
+		applyMode(mode, def, normal)
+		Eventually(replicasOf(dep)).Should(Equal(int32(3)))
+		markReady(dep)
+		Eventually(countsOf(mode)).Should(HaveField("Settled", int32(1)))
+
+		setDefinitionModes(def, normal, peak, standby)
+		Eventually(countsOf(mode)).Should(Equal(modev1alpha1.WorkloadCounts{Total: 1, Invalid: 1}))
+		Expect(statusOf(mode)().Unsettled[0].Message).To(ContainSubstring("its modes are normal, peak, standby"))
+		waitForStatusModes(mode, normal, peak, standby)
+		Expect(replicasOf(dep)()).To(Equal(int32(3)))
+	})
+
+	It("leaves the mode manager owning spec and mode-operator owning status", func() {
+		applyMode(mode, def, normal)
+		waitForStatusModes(mode, modes...)
+
+		cm := &modev1alpha1.ClusterMode{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mode}, cm)).To(Succeed())
+		owners := map[string][]string{}
+		for _, mf := range cm.ManagedFields {
+			var fields map[string]map[string]any
+			Expect(json.Unmarshal(mf.FieldsV1.GetRawBytes(), &fields)).To(Succeed())
+			for _, f := range []string{"f:mode", "f:definition"} {
+				if _, ok := fields["f:spec"][f]; ok {
+					owners["spec."+f[2:]] = append(owners["spec."+f[2:]], mf.Manager)
 				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
-		})
-
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &modev1alpha1.ClusterMode{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Cleanup the specific resource instance ClusterMode")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &ClusterModeReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+			if _, ok := fields["f:status"]; ok {
+				owners["status"] = append(owners["status"], mf.Manager+"/"+mf.Subresource)
 			}
+		}
+		Expect(owners).To(Equal(map[string][]string{
+			"spec.mode":       {modeManager},
+			"spec.definition": {modeManager},
+			"status":          {FieldManager + "/status"},
+		}))
+	})
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
-		})
+	It("keeps the metrics in step with the status, and deletes them with the ClusterMode", func() {
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{AnnotationReplicas: "normal=3,peak=6"})
+		applyMode(mode, def, normal)
+		Eventually(replicasOf(dep)).Should(Equal(int32(3)))
+		markReady(dep)
+		Eventually(func() map[string]float64 { return metricSeries(workloadsMetric, mode) }).Should(HaveKeyWithValue("state=settled", 1.0))
+		Expect(metricSeries(currentModeMetric, mode)).To(Equal(map[string]float64{"mode=normal": 1}))
+		Expect(metricSeries(replicasMetric, mode)).To(Equal(map[string]float64{"type=desired": 3, "type=applied": 3, "type=ready": 3}))
+		Expect(metricSeries(invalidAnnotationsMetric, mode)).To(Equal(map[string]float64{"": 0}))
+		Expect(metricSeries(modeChangesMetric, mode)).To(Equal(map[string]float64{"": 0}))
+		Expect(metricSeries(conditionMetric, mode)).To(Equal(map[string]float64{
+			"type=Applied": 1, "type=Ready": 1, "type=Degraded": 0,
+		}))
+
+		applyMode(mode, def, peak)
+		Eventually(func() map[string]float64 { return metricSeries(currentModeMetric, mode) }).Should(Equal(map[string]float64{"mode=peak": 1}))
+		Expect(metricSeries(modeChangesMetric, mode)).To(Equal(map[string]float64{"": 1}))
+
+		Expect(k8sClient.Delete(ctx, &modev1alpha1.ClusterMode{ObjectMeta: metav1.ObjectMeta{Name: mode}})).To(Succeed())
+		for _, c := range []prometheus.Collector{currentModeMetric, modeChangesMetric, workloadsMetric, replicasMetric,
+			invalidAnnotationsMetric, conditionMetric} {
+			Eventually(func() map[string]float64 { return metricSeries(c, mode) }).Should(BeEmpty())
+		}
 	})
 })
