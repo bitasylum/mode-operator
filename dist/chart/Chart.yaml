@@ -1,0 +1,15 @@
+apiVersion: v2
+name: mode-operator
+description: >-
+  Scales opted-in Deployments and StatefulSets to the replica count each one
+  declares for the cluster's current mode.
+type: application
+# The chart, the image and the CRDs are released together under one version.
+version: 0.1.0
+appVersion: "0.1.0"
+# The CRDs' validation rules need CEL with fieldPath and transition rules.
+kubeVersion: ">=1.30.0-0"
+keywords:
+  - kubernetes
+  - operator
+  - scaling

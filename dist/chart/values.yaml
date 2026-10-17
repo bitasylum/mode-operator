@@ -1,0 +1,148 @@
+# Overrides for the chart name ("mode-operator") and for the full name that
+# prefixes every object, which defaults to the release name plus the chart
+# name, or just the release name when that already contains it.
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/audiobuzz/mode-operator
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+controller:
+  # Two replicas: one leads and reconciles, the other takes over if it goes.
+  replicas: 2
+  leaderElection: true
+
+  # How long a workload may take to reach its replicas before it counts as
+  # Stalled. A workload's mode.bitasylum.org/settle-timeout annotation
+  # overrides it.
+  settleTimeout: 10m
+
+  # More command-line flags, for example --zap-devel for readable logs or
+  # --zap-log-level=debug.
+  extraArgs: []
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
+
+  # The image runs as UID and GID 65532; pinning them here keeps that true
+  # for an image built differently.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  # Keeps one replica through voluntary disruptions such as node drains.
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+
+  # Spread the replicas over nodes where there is more than one. Set to []
+  # to turn it off.
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+
+  terminationGracePeriodSeconds: 10
+  priorityClassName: ""
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+
+serviceAccount:
+  annotations: {}
+
+# Both CRDs are installed and upgraded with the chart. With keep set, they
+# stay in place on helm uninstall, and Argo CD never prunes or deletes them,
+# because deleting a CRD deletes every ClusterMode or ClusterModeDefinition
+# with it. Turning keep off removes that protection.
+crds:
+  install: true
+  keep: true
+
+# ClusterModeDefinitions to install with the chart, so the allowed modes are
+# kept in Git with the rest of the install. They stay in place on uninstall,
+# and when removed from this list; delete one by hand if you mean to. For
+# example:
+#   definitions:
+#     - name: standard
+#       modes: [normal, peak, offpeak, maintenance, standby]
+#       defaultMode: standby
+# helm install can't create definitions in the same release as the CRDs,
+# because it checks every object's kind first: install without definitions,
+# then add them with helm upgrade. Argo CD can do it in one sync.
+definitions: []
+
+# The mode manager's writer role (mode-operator-clustermode-writer) lets it
+# write only these ClusterModes. Its own chart binds its ServiceAccount to the
+# role. Set to [] to leave the role out.
+modeManager:
+  clusterModes:
+    - default
+
+# Groups and ServiceAccounts to bind to the roles for people and tools.
+# With none, the roles are installed but not bound. For example:
+#   definitionAdmins:
+#     serviceAccounts:
+#       - name: argocd-application-controller
+#         namespace: argocd
+rbac:
+  # May change a ClusterMode's mode by hand, but not create or delete one.
+  maintainers:
+    groups: []
+    serviceAccounts: []
+  # May read ClusterModes, their status, and the definitions.
+  viewers:
+    groups: []
+    serviceAccounts: []
+  # Full access to ClusterModeDefinitions.
+  definitionAdmins:
+    groups: []
+    serviceAccounts: []
+
+# The metrics endpoint serves HTTPS and checks each caller's token and RBAC.
+# Grant scrapers the mode-operator-metrics-reader ClusterRole.
+metrics:
+  enabled: true
+  port: 8443
+  # A kubernetes.io/tls Secret in the release namespace (tls.crt and tls.key)
+  # to serve instead of the self-signed certificate, for example one issued
+  # by cert-manager.
+  certSecret: ""
+  serviceMonitor:
+    # Needs the Prometheus Operator's CRDs.
+    enabled: false
+    labels: {}
+    interval: ""
+    # TLS settings for scraping, such as a CA to verify certSecret's
+    # certificate with. Empty skips verification of the self-signed one.
+    tlsConfig: {}
+
+# Allow traffic to the metrics port only from namespaces matching the
+# selector.
+networkPolicy:
+  enabled: false
+  metricsNamespaceSelector:
+    matchLabels:
+      metrics: enabled

@@ -11,7 +11,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      control-plane: controller-manager
+      app.kubernetes.io/component: controller
       app.kubernetes.io/name: mode-operator
   policyTypes:
     - Ingress

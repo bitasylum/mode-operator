@@ -1,0 +1,35 @@
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "mode-operator.resourceName" (dict "suffix" "metrics" "context" .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mode-operator.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  endpoints:
+    - path: /metrics
+      port: https
+      scheme: https
+      {{- with .Values.metrics.serviceMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+      # Prometheus authenticates with its ServiceAccount token, which needs
+      # the mode-operator-metrics-reader ClusterRole.
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        serverName: {{ include "mode-operator.resourceName" (dict "suffix" "metrics" "context" .) }}.{{ .Release.Namespace }}.svc
+        {{- with .Values.metrics.serviceMonitor.tlsConfig }}
+        {{- toYaml . | nindent 8 }}
+        {{- else }}
+        # The controller serves a self-signed certificate unless
+        # metrics.certSecret is set; set serviceMonitor.tlsConfig to verify it.
+        insecureSkipVerify: true
+        {{- end }}
+  selector:
+    matchLabels:
+      {{- include "mode-operator.selectorLabels" . | nindent 6 }}
+{{- end }}

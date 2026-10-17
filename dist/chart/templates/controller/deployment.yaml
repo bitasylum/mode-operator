@@ -1,0 +1,115 @@
+{{- $c := .Values.controller }}
+{{- if and (gt (int $c.replicas) 1) (not $c.leaderElection) }}
+{{- fail "controller.leaderElection must be true when controller.replicas is more than 1" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mode-operator.controllerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mode-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  replicas: {{ $c.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mode-operator.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: mode-operator
+        {{- with $c.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "mode-operator.labels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+        {{- with $c.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "mode-operator.controllerName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $c.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ $c.terminationGracePeriodSeconds }}
+      containers:
+        - name: mode-operator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /mode-operator
+          args:
+            - --leader-elect={{ $c.leaderElection }}
+            - --health-probe-bind-address=:8081
+            - --metrics-bind-address={{ if .Values.metrics.enabled }}:{{ .Values.metrics.port }}{{ else }}0{{ end }}
+            - --settle-timeout={{ $c.settleTimeout }}
+            {{- if and .Values.metrics.enabled .Values.metrics.certSecret }}
+            - --metrics-cert-path=/etc/mode-operator/metrics-certs
+            {{- end }}
+            {{- range $c.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml $c.securityContext | nindent 12 }}
+          {{- if and .Values.metrics.enabled .Values.metrics.certSecret }}
+          volumeMounts:
+            - name: metrics-certs
+              mountPath: /etc/mode-operator/metrics-certs
+              readOnly: true
+          {{- end }}
+      {{- if and .Values.metrics.enabled .Values.metrics.certSecret }}
+      volumes:
+        - name: metrics-certs
+          secret:
+            secretName: {{ .Values.metrics.certSecret }}
+      {{- end }}
+      {{- with $c.topologySpreadConstraints }}
+      {{- $selector := dict "labelSelector" (dict "matchLabels" (include "mode-operator.selectorLabels" $ | fromYaml)) }}
+      topologySpreadConstraints:
+        {{- range . }}
+        - {{ toYaml (merge (deepCopy $selector) .) | nindent 10 | trim }}
+        {{- end }}
+      {{- end }}
+      {{- with $c.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

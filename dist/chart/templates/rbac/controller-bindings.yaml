@@ -1,0 +1,49 @@
+{{- $sa := include "mode-operator.controllerName" . }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $sa }}
+  labels:
+    {{- include "mode-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $sa }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mode-operator.resourceName" (dict "suffix" "leader-election" "context" .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mode-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "mode-operator.resourceName" (dict "suffix" "leader-election" "context" .) }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+{{- if .Values.metrics.enabled }}
+---
+# Lets the metrics endpoint check each caller's token and permissions.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "mode-operator.resourceName" (dict "suffix" "metrics-auth" "context" .) }}
+  labels:
+    {{- include "mode-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "mode-operator.resourceName" (dict "suffix" "metrics-auth" "context" .) }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

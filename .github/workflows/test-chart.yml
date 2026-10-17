@@ -1,0 +1,41 @@
+name: Chart
+
+on:
+  push:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  test-chart:
+    permissions:
+      contents: read
+    name: Lint and install the chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMG: mode-operator:ci
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Check the chart is in step with config/
+        run: make chart-check
+
+      - name: Lint the chart
+        run: make helm-lint
+
+      - name: Install kind
+        run: |
+          make kind
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      - name: Install the chart on kind
+        run: make test-chart

@@ -1,0 +1,31 @@
+# For maintainers who may change a ClusterMode's mode by hand (design 5.6),
+# for example:
+#   kubectl patch clustermode default --type=merge -p '{"spec":{"mode":"maintenance"}}'
+# They can't create or delete ClusterModes or write their status. The API
+# server still checks the new mode against the definition.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: mode-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: clustermode-maintainer
+rules:
+- apiGroups:
+  - mode.bitasylum.org
+  resources:
+  - clustermodes
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - mode.bitasylum.org
+  resources:
+  - clustermodedefinitions
+  verbs:
+  - get
+  - list
+  - watch

@@ -1,0 +1,24 @@
+mode-operator {{ .Chart.AppVersion }} is installed in namespace {{ .Release.Namespace }}.
+
+Check that it is running:
+  kubectl -n {{ .Release.Namespace }} get deploy {{ include "mode-operator.controllerName" . }}
+
+Next:
+{{- if not .Values.definitions }}
+  1. Create a ClusterModeDefinition listing the allowed modes, or set the
+     chart's definitions value.
+{{- else }}
+  1. Definitions installed: {{ range .Values.definitions }}{{ .name }} {{ end }}
+{{- end }}
+  2. Install the mode manager and bind its ServiceAccount to the
+     {{ include "mode-operator.resourceName" (dict "suffix" "clustermode-writer" "context" .) }} ClusterRole. It creates the ClusterMode.
+     Maintainers who may change the mode by hand need
+     {{ include "mode-operator.resourceName" (dict "suffix" "clustermode-maintainer" "context" .) }}.
+  3. Opt workloads in with the mode.bitasylum.org/clustermode label and the
+     mode.bitasylum.org/replicas annotation.
+
+Then watch it with:
+  kubectl get clustermode -o wide
+
+The CRDs{{ if .Values.definitions }} and definitions{{ end }} stay in place on helm uninstall. Deleting a CRD
+deletes every object of its kind.

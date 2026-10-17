@@ -1,0 +1,27 @@
+{{- /*
+ClusterModeDefinitions from .Values.definitions. Like the CRDs, they stay in
+place on helm uninstall, and when they are removed from the values, so the
+ClusterModes that use them keep working. Argo CD ignores Helm's keep, so they
+also carry Argo CD's Prune=false and Delete=false.
+
+helm install can't create these in the same release as the CRDs, because it
+checks every kind first: install without definitions, then add them with
+helm upgrade. Argo CD applies the CRDs first, and the sync option below lets it
+skip the dry run of a definition whose CRD doesn't exist yet.
+*/}}
+{{- range .Values.definitions }}
+---
+apiVersion: mode.bitasylum.org/v1alpha1
+kind: ClusterModeDefinition
+metadata:
+  name: {{ required "every definition needs a name" .name | quote }}
+  labels:
+    {{- include "mode-operator.labels" $ | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true,Prune=false,Delete=false
+spec:
+  modes:
+    {{- toYaml (required (printf "definition %s needs modes" .name) .modes) | nindent 4 }}
+  defaultMode: {{ required (printf "definition %s needs a defaultMode" .name) .defaultMode | quote }}
+{{- end }}

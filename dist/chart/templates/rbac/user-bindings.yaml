@@ -1,0 +1,35 @@
+{{- /*
+Bind the roles for people and tools to the groups and ServiceAccounts in
+.Values.rbac. Viewers get both viewer roles.
+*/}}
+{{- $rbac := .Values.rbac }}
+{{- range $b := list
+  (dict "role" "clustermode-maintainer" "subjects" $rbac.maintainers)
+  (dict "role" "clustermode-viewer" "subjects" $rbac.viewers)
+  (dict "role" "clustermodedefinition-viewer" "subjects" $rbac.viewers)
+  (dict "role" "clustermodedefinition-admin" "subjects" $rbac.definitionAdmins) }}
+{{- if or $b.subjects.groups $b.subjects.serviceAccounts }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "mode-operator.resourceName" (dict "suffix" $b.role "context" $) }}
+  labels:
+    {{- include "mode-operator.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "mode-operator.resourceName" (dict "suffix" $b.role "context" $) }}
+subjects:
+  {{- range $b.subjects.groups }}
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: {{ . | quote }}
+  {{- end }}
+  {{- range $b.subjects.serviceAccounts }}
+  - kind: ServiceAccount
+    name: {{ required "each ServiceAccount needs a name" .name | quote }}
+    namespace: {{ required "each ServiceAccount needs a namespace" .namespace | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

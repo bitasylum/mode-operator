@@ -1,27 +1,24 @@
-# This rule is not used by the project mode-operator itself.
-# It is provided to allow the cluster admin to help manage permissions for users.
-#
-# Grants full permissions ('*') over mode.bitasylum.org.
-# This role is intended for users authorized to modify roles and bindings within the cluster,
-# enabling them to delegate specific permissions to other users or groups as needed.
-
+# Full access to ClusterModeDefinitions, for the admins or the GitOps service
+# account that manage the modes (design 5.6). Neither mode-operator nor the
+# mode manager can write definitions.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/name: mode-operator
     app.kubernetes.io/managed-by: kustomize
-  name: clustermodedefinition-admin-role
+  name: clustermodedefinition-admin
 rules:
 - apiGroups:
   - mode.bitasylum.org
   resources:
   - clustermodedefinitions
   verbs:
-  - '*'
-- apiGroups:
-  - mode.bitasylum.org
-  resources:
-  - clustermodedefinitions/status
-  verbs:
   - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+  - deletecollection

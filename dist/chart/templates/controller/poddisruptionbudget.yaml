@@ -1,0 +1,16 @@
+{{- with .Values.controller.podDisruptionBudget }}
+{{- if .enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mode-operator.controllerName" $ }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "mode-operator.labels" $ | nindent 4 }}
+spec:
+  maxUnavailable: {{ .maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "mode-operator.selectorLabels" $ | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,6 @@
+# Install with: kubectl apply -k config/mode-manager/rbac
+# It isn't part of config/default, because the mode manager is installed
+# separately. To allow other ClusterMode names, edit resourceNames.
+namePrefix: mode-operator-
+resources:
+- clustermode_writer_role.yaml
