@@ -53,6 +53,12 @@ helm install mode-operator ./dist/chart --namespace mode-operator-system
   mode manager's chart, such as `mode-operator-clustermode-writer`. With
   another release name, set `fullnameOverride: mode-operator`.
 - One install per cluster: the CRDs and the controller are cluster-wide.
+- **On OpenShift**, the default `restricted-v2` security context constraint
+  gives each namespace's pods a UID from its own range, and rejects the
+  chart's `runAsUser` and `runAsGroup` of 65532. Leave them out with `--set
+  controller.podSecurityContext.runAsUser=null --set
+  controller.podSecurityContext.runAsGroup=null`; `runAsNonRoot` stays. This
+  isn't tested on OpenShift yet.
 
 The chart installs both CRDs, the controller (2 replicas with leader
 election), its RBAC, the roles for people and for the mode manager described
