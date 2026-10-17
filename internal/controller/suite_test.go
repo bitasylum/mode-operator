@@ -21,16 +21,20 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
@@ -45,6 +49,9 @@ var (
 	testEnv   *envtest.Environment
 	cfg       *rest.Config
 	k8sClient client.Client
+	// cachedClient reads through the manager's cache, to wait until the
+	// reconcilers can see a change.
+	cachedClient client.Client
 )
 
 func TestControllers(t *testing.T) {
@@ -83,6 +90,36 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	By("starting the manager with the workload reconcilers, set up as in cmd/main.go")
+	kinds := BuiltinKinds()
+	byObject, err := CacheByObject(kinds)
+	Expect(err).NotTo(HaveOccurred())
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme:                 scheme.Scheme,
+		Metrics:                metricsserver.Options{BindAddress: "0"},
+		HealthProbeBindAddress: "0",
+		Cache:                  cache.Options{ByObject: byObject},
+	})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(SetupIndexes(ctx, mgr, kinds)).To(Succeed())
+	for _, kind := range kinds {
+		Expect((&WorkloadReconciler{
+			Client:   mgr.GetClient(),
+			Kind:     kind,
+			Recorder: mgr.GetEventRecorder(FieldManager),
+		}).SetupWithManager(mgr)).To(Succeed())
+	}
+	cachedClient = mgr.GetClient()
+	go func() {
+		defer GinkgoRecover()
+		Expect(mgr.Start(ctx)).To(Succeed())
+	}()
+
+	SetDefaultEventuallyTimeout(15 * time.Second)
+	SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
+	SetDefaultConsistentlyDuration(1500 * time.Millisecond)
+	SetDefaultConsistentlyPollingInterval(100 * time.Millisecond)
 })
 
 var _ = AfterSuite(func() {

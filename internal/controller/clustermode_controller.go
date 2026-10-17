@@ -33,9 +33,10 @@ type ClusterModeReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=mode.bitasylum.org,resources=clustermodes,verbs=get;list;watch;create;update;patch;delete
+// mode-operator writes ClusterMode status only, never spec (design §7.7).
+// +kubebuilder:rbac:groups=mode.bitasylum.org,resources=clustermodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=mode.bitasylum.org,resources=clustermodes/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=mode.bitasylum.org,resources=clustermodes/finalizers,verbs=update
+// +kubebuilder:rbac:groups=mode.bitasylum.org,resources=clustermodedefinitions,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

@@ -9,8 +9,11 @@ The design is in the parent repo:
 [ship-core-mode-controller/docs/design.md](https://github.com/Audiobuzz/ship-core-mode-controller/blob/main/docs/design.md).
 Section 9.1 describes this repo's layout.
 
-Status: the `ClusterMode` and `ClusterModeDefinition` APIs and their validation
-are in place and tested. The controllers come next.
+Status:
+- **Done:** the `ClusterMode` and `ClusterModeDefinition` APIs and their
+  validation, and the Deployment and StatefulSet reconcilers. The
+  reconcilers apply the current mode, including the scale-to-zero delay.
+- **Next:** writing `ClusterMode` status, then the KubeVirt kinds.
 
 ## Development
 

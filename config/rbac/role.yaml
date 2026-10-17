@@ -5,23 +5,31 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - mode.bitasylum.org
+  - apps
   resources:
-  - clustermodes
+  - deployments
+  - statefulsets
   verbs:
-  - create
-  - delete
   - get
   - list
   - patch
-  - update
   - watch
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
 - apiGroups:
   - mode.bitasylum.org
   resources:
-  - clustermodes/finalizers
+  - clustermodedefinitions
+  - clustermodes
   verbs:
-  - update
+  - get
+  - list
+  - watch
 - apiGroups:
   - mode.bitasylum.org
   resources:

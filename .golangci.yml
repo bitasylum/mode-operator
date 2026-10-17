@@ -52,6 +52,10 @@ linters:
           - dupl
           - lll
         path: internal/*
+      # Table-driven tests repeat literals such as "normal=3" on purpose.
+      - linters:
+          - goconst
+        path: _test\.go
     paths:
       - third_party$
       - builtin$

@@ -29,6 +29,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -158,13 +159,21 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	kinds := controller.BuiltinKinds()
+	cacheByObject, err := controller.CacheByObject(kinds)
+	if err != nil {
+		setupLog.Error(err, "Failed to build the workload cache filter")
+		os.Exit(1)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
+		Cache:                  cache.Options{ByObject: cacheByObject},
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "adc2bde0.bitasylum.org",
+		LeaderElectionID:       "mode-operator.mode.bitasylum.org",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -182,6 +191,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx := ctrl.SetupSignalHandler()
+	if err := controller.SetupIndexes(ctx, mgr, kinds); err != nil {
+		setupLog.Error(err, "Failed to set up field indexes")
+		os.Exit(1)
+	}
+	for _, kind := range kinds {
+		if err := (&controller.WorkloadReconciler{
+			Client:   mgr.GetClient(),
+			Kind:     kind,
+			Recorder: mgr.GetEventRecorder(controller.FieldManager),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create controller", "controller", kind.Name())
+			os.Exit(1)
+		}
+	}
 	if err := (&controller.ClusterModeReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -201,7 +225,7 @@ func main() {
 	}
 
 	setupLog.Info("Starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
