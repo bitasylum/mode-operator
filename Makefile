@@ -136,6 +136,10 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify
 
+.PHONY: shellcheck
+shellcheck: shellcheck-install ## Lint the shell scripts with shellcheck
+	"$(SHELLCHECK)" hack/*.sh .devcontainer/*.sh
+
 # The standard library govulncheck checks is the running Go's, so run it under
 # the Go version that the Dockerfile builds the image with.
 BUILD_GO_VERSION ?= $(shell hack/build-go-version.sh)
@@ -221,6 +225,9 @@ $(LOCALBIN):
 ## Tool Binaries
 KUBECTL ?= kubectl
 KIND ?= kind
+# shellcheck isn't a Go tool, so shellcheck-install downloads a pinned release.
+# Set SHELLCHECK to use another copy.
+SHELLCHECK ?= $(LOCALBIN)/shellcheck
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
@@ -244,6 +251,10 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
 
 GOLANGCI_LINT_VERSION ?= v2.15.0
 GOVULNCHECK_VERSION ?= v1.9.0
+# The sha256 of each release tarball, as GitHub reports it for the asset.
+SHELLCHECK_VERSION ?= v0.11.0
+SHELLCHECK_SHA256_x86_64 ?= b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6
+SHELLCHECK_SHA256_aarch64 ?= 68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc
 HELM_VERSION ?= v4.3.1
 KIND_VERSION ?= v0.33.0
 .PHONY: kustomize
@@ -273,6 +284,27 @@ $(ENVTEST): $(LOCALBIN)
 govulncheck: $(GOVULNCHECK) ## Download govulncheck locally if necessary.
 $(GOVULNCHECK): $(LOCALBIN)
 	$(call go-install-tool,$(GOVULNCHECK),golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
+
+.PHONY: shellcheck-install
+shellcheck-install: $(LOCALBIN) ## Download shellcheck locally if necessary, checking its sha256.
+	@target="$(LOCALBIN)/shellcheck"; versioned="$$target-$(SHELLCHECK_VERSION)"; \
+	[ "$(SHELLCHECK)" = "$$target" ] || exit 0; \
+	[ -f "$$versioned" ] && [ "$$(readlink -- "$$target" 2>/dev/null)" = "$$versioned" ] && exit 0; \
+	set -e; \
+	case "$$(uname -sm)" in \
+	  "Linux x86_64") arch=x86_64; sum=$(SHELLCHECK_SHA256_x86_64) ;; \
+	  "Linux aarch64" | "Linux arm64") arch=aarch64; sum=$(SHELLCHECK_SHA256_aarch64) ;; \
+	  *) echo "No pinned shellcheck for $$(uname -sm); install one and set SHELLCHECK"; exit 1 ;; \
+	esac; \
+	tarball="shellcheck-$(SHELLCHECK_VERSION).linux.$$arch.tar.gz"; \
+	tmp="$$(mktemp -d)"; \
+	echo "Downloading $$tarball"; \
+	curl -fsSL -o "$$tmp/$$tarball" "https://github.com/koalaman/shellcheck/releases/download/$(SHELLCHECK_VERSION)/$$tarball"; \
+	echo "$$sum  $$tmp/$$tarball" | sha256sum -c --quiet -; \
+	tar -xzf "$$tmp/$$tarball" -C "$$tmp"; \
+	mv "$$tmp/shellcheck-$(SHELLCHECK_VERSION)/shellcheck" "$$versioned"; \
+	rm -rf "$$tmp"; \
+	ln -sf "$$versioned" "$$target"
 
 .PHONY: helm
 helm: $(HELM) ## Download helm locally if necessary.
