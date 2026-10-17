@@ -354,6 +354,7 @@ sampling off.
 ```sh
 make test        # unit tests and envtest suites (downloads API server binaries once)
 make lint
+make vulncheck   # govulncheck, under the Go version the image is built with
 make helm-lint   # lint the chart and render it with its main options
 make chart-check # fail if dist/chart is out of date with config/
 make test-e2e    # build the image and run the end-to-end tests on their own kind cluster

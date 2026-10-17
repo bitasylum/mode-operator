@@ -136,6 +136,14 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify
 
+# The standard library govulncheck checks is the running Go's, so run it under
+# the Go version that the Dockerfile builds the image with.
+BUILD_GO_VERSION ?= $(shell sed -nE 's/^(ARG BASE_IMAGE=|FROM )golang:([0-9]+\.[0-9]+\.[0-9]+)@.*/\2/p' Dockerfile | head -n1)
+.PHONY: vulncheck
+vulncheck: govulncheck ## Check for known vulnerabilities that the code calls, under the image's Go version
+	@[ -n "$(BUILD_GO_VERSION)" ] || { echo "Could not read the Go version from the Dockerfile's golang image"; exit 1; }
+	GOTOOLCHAIN=go$(BUILD_GO_VERSION) "$(GOVULNCHECK)" ./...
+
 ##@ Build
 
 .PHONY: build
@@ -219,6 +227,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+GOVULNCHECK ?= $(LOCALBIN)/govulncheck
 HELM ?= $(LOCALBIN)/helm
 
 ## Tool Versions
@@ -236,6 +245,7 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.15.0
+GOVULNCHECK_VERSION ?= v1.9.0
 HELM_VERSION ?= v4.3.1
 KIND_VERSION ?= v0.33.0
 .PHONY: kustomize
@@ -260,6 +270,11 @@ setup-envtest: envtest ## Download the binaries required for ENVTEST in the loca
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+
+.PHONY: govulncheck
+govulncheck: $(GOVULNCHECK) ## Download govulncheck locally if necessary.
+$(GOVULNCHECK): $(LOCALBIN)
+	$(call go-install-tool,$(GOVULNCHECK),golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
 
 .PHONY: helm
 helm: $(HELM) ## Download helm locally if necessary.

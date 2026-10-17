@@ -1,0 +1,35 @@
+name: Vulnerabilities
+
+on:
+  push:
+  pull_request:
+  # New vulnerabilities are published without any change here, so check
+  # weekly too.
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  govulncheck:
+    permissions:
+      contents: read
+    name: Run on Ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      # make vulncheck switches to the Go version the Dockerfile builds the
+      # image with, so the standard library it checks is the one that ships.
+      - name: Check for known vulnerabilities
+        run: make vulncheck

@@ -1,0 +1,48 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    # Don't propose a release until it has been out a week. Security updates
+    # aren't delayed.
+    cooldown:
+      default-days: 7
+    # A k8s.io minor release comes out weeks before the controller-runtime
+    # release that supports it, so take k8s.io minors only through
+    # controller-runtime, whose minor updates bring them in.
+    ignore:
+      - dependency-name: "k8s.io/*"
+        update-types: ["version-update:semver-minor"]
+    groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+      go:
+        patterns:
+          - "*"
+
+  # Only images named on a FROM line; the golang image in BASE_IMAGE is
+  # updated by hand.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # Major versions come as PRs of their own.
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
