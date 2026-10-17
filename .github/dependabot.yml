@@ -23,14 +23,22 @@ updates:
         patterns:
           - "*"
 
-  # Only images named on a FROM line; the golang image in BASE_IMAGE is
-  # updated by hand.
+  # The golang builder image and the distroless runtime image. Go patch
+  # releases only: a new Go minor version is a change to make on purpose (see
+  # the README's Development section). Go patch releases are mostly security
+  # fixes, and Dependabot raises no security updates for images, so they skip
+  # the cooldown.
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+      exclude:
+        - golang
+    ignore:
+      - dependency-name: golang
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: github-actions
     directory: /

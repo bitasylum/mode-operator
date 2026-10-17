@@ -356,8 +356,8 @@ mode-operator can't write ClusterMode `spec`.
 
 ## Metrics and alerts
 
-The metrics endpoint serves HTTPS on port 8443 and checks each caller's token
-and RBAC: bind your Prometheus ServiceAccount to
+The metrics endpoint serves HTTPS on port 8443, TLS 1.3 only, and checks each
+caller's token and RBAC: bind your Prometheus ServiceAccount to
 `mode-operator-metrics-reader`. With `metrics.serviceMonitor.enabled`, the
 chart creates a ServiceMonitor. The controller's certificate is self-signed,
 so by default the ServiceMonitor skips verification. To verify it, set
@@ -465,6 +465,14 @@ name is taken.
 `make manifests` regenerates the CRDs and RBAC from the Go markers and copies
 them, and the rules of every role in `config/`, into the chart with
 `hack/sync-chart.sh`. The rest of the chart is maintained by hand.
+
+**The Go version** that matters is the one on the Dockerfile's builder line:
+CI and `make vulncheck` read it with `hack/build-go-version.sh`. Dependabot
+proposes Go patch releases only. To move to a new minor version, change the
+tag and digest on that line together (`docker buildx imagetools inspect
+golang:<version>` prints the digest), and the image in
+`.devcontainer/devcontainer.json`. Raise go.mod's `go` line only when the code
+needs the newer language.
 
 ## License
 

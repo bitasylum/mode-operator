@@ -239,7 +239,7 @@ var _ = Describe("Manager", Ordered, func() {
 							"image": "curlimages/curl:latest",
 							"command": ["/bin/sh", "-c"],
 							"args": [
-								"for i in $(seq 1 30); do curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics && exit 0 || sleep 2; done; exit 1"
+								"u=https://%[2]s.%[3]s.svc.cluster.local:8443/metrics; ok=0; for i in $(seq 1 30); do if curl -v -k -H 'Authorization: Bearer %[1]s' $u; then ok=1; break; fi; sleep 2; done; [ $ok = 1 ] || exit 1; if curl -s -k --tls-max 1.2 -o /dev/null $u; then echo 'TLS 1.2 was accepted'; exit 1; fi; echo 'TLS 1.2 refused'"
 							],
 							"securityContext": {
 								"readOnlyRootFilesystem": true,
@@ -254,7 +254,7 @@ var _ = Describe("Manager", Ordered, func() {
 								}
 							}
 						}],
-						"serviceAccountName": "%s"
+						"serviceAccountName": "%[4]s"
 					}
 				}`, token, metricsServiceName, namespace, serviceAccountName))
 			_, err = utils.Run(cmd)
@@ -277,6 +277,7 @@ var _ = Describe("Manager", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
 				g.Expect(metricsOutput).NotTo(BeEmpty())
 				g.Expect(metricsOutput).To(ContainSubstring("< HTTP/1.1 200 OK"))
+				g.Expect(metricsOutput).To(ContainSubstring("TLS 1.2 refused"))
 			}
 			Eventually(verifyMetricsAvailable, 2*time.Minute).Should(Succeed())
 		})

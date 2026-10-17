@@ -24,12 +24,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # The Go the Dockerfile builds the image with, rather than go.mod's
+      # minimum, so CI checks what ships.
+      - name: Read the image's Go version
+        id: go
+        run: |
+          version=$(hack/build-go-version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version-file: go.mod
+          go-version: ${{ steps.go.outputs.version }}
 
-      # make vulncheck switches to the Go version the Dockerfile builds the
-      # image with, so the standard library it checks is the one that ships.
       - name: Check for known vulnerabilities
         run: make vulncheck

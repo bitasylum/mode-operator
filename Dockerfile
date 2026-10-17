@@ -1,8 +1,8 @@
 # Build the mode-operator binary.
-# Base images are pinned by digest; update the tag and digest together.
-# Override BASE_IMAGE to build from another registry, e.g. docker.io/library/golang:1.26.9
-ARG BASE_IMAGE=golang:1.26.9@sha256:37cfcca63222ec499bec5e8ad7aad52dbf7529db36d5812b8eae2f0621aa92d6
-FROM ${BASE_IMAGE} AS builder
+# Base images are pinned by digest, and Dependabot updates the tag and digest
+# together. hack/build-go-version.sh reads the Go version from this line, so
+# CI and make vulncheck use the Go that builds the image.
+FROM golang:1.26.9@sha256:37cfcca63222ec499bec5e8ad7aad52dbf7529db36d5812b8eae2f0621aa92d6 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 # VERSION is stamped into the binary and logged at startup.

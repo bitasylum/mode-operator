@@ -138,7 +138,7 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 # The standard library govulncheck checks is the running Go's, so run it under
 # the Go version that the Dockerfile builds the image with.
-BUILD_GO_VERSION ?= $(shell sed -nE 's/^(ARG BASE_IMAGE=|FROM )golang:([0-9]+\.[0-9]+\.[0-9]+)@.*/\2/p' Dockerfile | head -n1)
+BUILD_GO_VERSION ?= $(shell hack/build-go-version.sh)
 .PHONY: vulncheck
 vulncheck: govulncheck ## Check for known vulnerabilities that the code calls, under the image's Go version
 	@[ -n "$(BUILD_GO_VERSION)" ] || { echo "Could not read the Go version from the Dockerfile's golang image"; exit 1; }
@@ -157,11 +157,9 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # If you wish to build the image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-# Override BASE_IMAGE to build from another registry, e.g.
-# make docker-build IMG=<img> BASE_IMAGE=docker.io/library/golang:1.26
 .PHONY: docker-build
 docker-build: ## Build the container image.
-	$(CONTAINER_TOOL) build $(if $(BASE_IMAGE),--build-arg BASE_IMAGE=$(BASE_IMAGE)) --build-arg VERSION=$(VERSION) -t ${IMG} .
+	$(CONTAINER_TOOL) build --build-arg VERSION=$(VERSION) -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push the container image.
@@ -180,7 +178,7 @@ docker-buildx: ## Build and push the container image for several platforms
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name mode-operator-builder
 	$(CONTAINER_TOOL) buildx use mode-operator-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) $(if $(BASE_IMAGE),--build-arg BASE_IMAGE=$(BASE_IMAGE)) --build-arg VERSION=$(VERSION) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --build-arg VERSION=$(VERSION) --tag ${IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm mode-operator-builder
 	rm Dockerfile.cross
 

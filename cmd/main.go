@@ -111,6 +111,14 @@ func main() {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
+	// The metrics endpoint is the only TLS server, and its clients are metrics
+	// scrapers, which all support TLS 1.3. Go offers its post-quantum key
+	// exchange only with TLS 1.3, so refusing TLS 1.2 removes the fallback to
+	// a key exchange that is classical only.
+	tlsOpts = append(tlsOpts, func(c *tls.Config) {
+		c.MinVersion = tls.VersionTLS13
+	})
+
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
 	// More info:
 	// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.25.0/pkg/metrics/server
