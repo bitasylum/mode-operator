@@ -95,6 +95,13 @@ To install with Kustomize instead, `make deploy IMG=<image>` applies
 mode manager's writer role. Read [CRDs and uninstalling](#crds-and-uninstalling)
 before you use `make undeploy`.
 
+**Moving from Kustomize to the chart:** delete the controller's namespace and
+its ClusterRoles and ClusterRoleBindings, but never the CRDs, because
+deleting a CRD deletes every object of its kind. Then install with `helm
+install ... --take-ownership --force-conflicts`: the first flag adopts the
+CRDs, and the second takes over the fields that `kubectl apply` owns.
+Workloads keep their replicas while no controller runs.
+
 ## Quick start
 
 1. Define the modes:
