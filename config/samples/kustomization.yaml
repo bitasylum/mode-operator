@@ -1,0 +1,5 @@
+## Append samples of your project ##
+resources:
+- mode_v1alpha1_clustermode.yaml
+- mode_v1alpha1_clustermodedefinition.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
