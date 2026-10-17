@@ -13,3 +13,6 @@ keywords:
   - kubernetes
   - operator
   - scaling
+home: https://github.com/bitasylum/mode-operator
+sources:
+  - https://github.com/bitasylum/mode-operator

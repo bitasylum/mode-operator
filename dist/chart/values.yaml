@@ -5,7 +5,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: ghcr.io/audiobuzz/mode-operator
+  repository: ghcr.io/bitasylum/mode-operator
   # Defaults to the chart's appVersion.
   tag: ""
   pullPolicy: IfNotPresent

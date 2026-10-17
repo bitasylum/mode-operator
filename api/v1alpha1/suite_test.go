@@ -31,8 +31,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
-	"github.com/Audiobuzz/mode-operator/test/utils"
+	modev1alpha1 "github.com/bitasylum/mode-operator/api/v1alpha1"
+	"github.com/bitasylum/mode-operator/test/utils"
 )
 
 // This suite checks the validation built into the CRDs, and the admission

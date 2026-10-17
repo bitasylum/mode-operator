@@ -36,8 +36,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
-	"github.com/Audiobuzz/mode-operator/internal/controller"
+	modev1alpha1 "github.com/bitasylum/mode-operator/api/v1alpha1"
+	"github.com/bitasylum/mode-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 

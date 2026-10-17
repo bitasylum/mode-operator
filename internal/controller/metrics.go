@@ -23,7 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
+	modev1alpha1 "github.com/bitasylum/mode-operator/api/v1alpha1"
 )
 
 // labelClusterMode is the metric label that names the ClusterMode.

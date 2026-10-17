@@ -1,4 +1,4 @@
-module github.com/Audiobuzz/mode-operator
+module github.com/bitasylum/mode-operator
 
 go 1.26.0
 

@@ -34,7 +34,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
+	modev1alpha1 "github.com/bitasylum/mode-operator/api/v1alpha1"
 )
 
 // These specs run the workload reconcilers against a real API server. There

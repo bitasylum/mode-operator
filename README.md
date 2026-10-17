@@ -67,7 +67,7 @@ under [Access](#access), and the admission policy described under
 
 | Value | Default | Meaning |
 |---|---|---|
-| `image.repository`, `image.tag` | `ghcr.io/audiobuzz/mode-operator`, the chart's appVersion | the controller image |
+| `image.repository`, `image.tag` | `ghcr.io/bitasylum/mode-operator`, the chart's appVersion | the controller image |
 | `controller.replicas` | `2` | replicas; one leads at a time |
 | `controller.settleTimeout` | `10m` | how long a workload may take to reach its replicas before it counts as `Stalled` |
 | `controller.extraArgs` | `[]` | more flags, for example `--zap-log-level=debug` |

@@ -28,7 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/Audiobuzz/mode-operator/test/utils"
+	"github.com/bitasylum/mode-operator/test/utils"
 )
 
 // operatorImage is the image to be built and loaded for testing.

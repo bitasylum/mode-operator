@@ -31,8 +31,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
-	"github.com/Audiobuzz/mode-operator/internal/workload"
+	modev1alpha1 "github.com/bitasylum/mode-operator/api/v1alpha1"
+	"github.com/bitasylum/mode-operator/internal/workload"
 )
 
 var (

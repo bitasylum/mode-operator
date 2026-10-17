@@ -30,6 +30,11 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
 # Use distroless as minimal base image to package the binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
+# GHCR links an image to the repository named here, so the package inherits
+# the repository's access permissions. Its visibility is set separately: a new
+# package is private until made public in its settings.
+LABEL org.opencontainers.image.source="https://github.com/bitasylum/mode-operator" \
+      org.opencontainers.image.licenses="Apache-2.0"
 WORKDIR /
 COPY --from=builder /workspace/mode-operator .
 USER 65532:65532

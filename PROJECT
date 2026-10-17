@@ -7,7 +7,7 @@ domain: bitasylum.org
 layout:
 - go.kubebuilder.io/v4
 projectName: mode-operator
-repo: github.com/Audiobuzz/mode-operator
+repo: github.com/bitasylum/mode-operator
 resources:
 - api:
     crdVersion: v1
@@ -15,13 +15,13 @@ resources:
   domain: bitasylum.org
   group: mode
   kind: ClusterMode
-  path: github.com/Audiobuzz/mode-operator/api/v1alpha1
+  path: github.com/bitasylum/mode-operator/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
   domain: bitasylum.org
   group: mode
   kind: ClusterModeDefinition
-  path: github.com/Audiobuzz/mode-operator/api/v1alpha1
+  path: github.com/bitasylum/mode-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

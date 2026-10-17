@@ -24,7 +24,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"github.com/Audiobuzz/mode-operator/internal/modespec"
+	"github.com/bitasylum/mode-operator/internal/modespec"
 )
 
 // errMissingReplicas is the replicas error of a labelled workload that has no

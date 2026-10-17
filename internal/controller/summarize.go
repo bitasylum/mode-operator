@@ -29,8 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
-	"github.com/Audiobuzz/mode-operator/internal/workload"
+	modev1alpha1 "github.com/bitasylum/mode-operator/api/v1alpha1"
+	"github.com/bitasylum/mode-operator/internal/workload"
 )
 
 // maxUnsettled is the most workloads status.unsettled lists.
