@@ -29,6 +29,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
@@ -79,6 +80,23 @@ func markReady(obj client.Object) {
 		}
 		g.Expect(k8sClient.Status().Update(ctx, live)).To(Succeed())
 	}).Should(Succeed())
+}
+
+// tryMode writes a ClusterMode's mode as the mode manager does, returning the
+// API server's answer instead of failing the spec.
+func tryMode(name, definition, mode string) error {
+	u := &unstructured.Unstructured{}
+	u.SetAPIVersion(modev1alpha1.SchemeGroupVersion.String())
+	u.SetKind("ClusterMode")
+	u.SetName(name)
+	if err := unstructured.SetNestedField(u.Object, definition, "spec", "definition"); err != nil {
+		return err
+	}
+	if err := unstructured.SetNestedField(u.Object, mode, "spec", "mode"); err != nil {
+		return err
+	}
+	return k8sClient.Apply(ctx, client.ApplyConfigurationFromUnstructured(u),
+		client.FieldOwner(modeManager), client.ForceOwnership)
 }
 
 // waitForStatusModes waits until mode-operator has copied the definition's
@@ -380,5 +398,106 @@ var _ = Describe("ClusterMode status", func() {
 			invalidAnnotationsMetric, conditionMetric} {
 			Eventually(func() map[string]float64 { return metricSeries(c, mode) }).Should(BeEmpty())
 		}
+	})
+})
+
+var _ = Describe("ClusterMode transitions", func() {
+	It("follows the definition's state machine, leaving a mode only once it is Ready", func() {
+		ns := newNamespace()
+		def := uniqueName("machine")
+		mode := uniqueName("cluster")
+		// normal and peak may move to each other, and standby, the default,
+		// only to normal.
+		created := &modev1alpha1.ClusterModeDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: def},
+			Spec: modev1alpha1.ClusterModeDefinitionSpec{
+				Modes:       []modev1alpha1.ModeName{normal, peak, standby},
+				DefaultMode: standby,
+				Transitions: []modev1alpha1.ModeTransition{
+					{From: normal, To: []modev1alpha1.ModeName{peak}},
+					{From: peak, To: []modev1alpha1.ModeName{normal}},
+					{From: standby, To: []modev1alpha1.ModeName{normal}},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, created)).To(Succeed())
+		DeferCleanup(func() { Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, created))).To(Succeed()) })
+
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{AnnotationReplicas: "normal=3,peak=6"})
+		applyMode(mode, def, normal)
+		Eventually(func() []modev1alpha1.ModeTransition { return statusOf(mode)().Transitions }).
+			Should(Equal(created.Spec.Transitions))
+		Expect(statusOf(mode)().DefaultMode).To(Equal(modev1alpha1.ModeName(standby)))
+
+		By("rejecting peak while normal is still scaling")
+		Eventually(replicasOf(dep)).Should(Equal(int32(3)))
+		Eventually(conditionOf(mode, modev1alpha1.ConditionReady)).Should(Equal("False/Scaling"))
+		err := tryMode(mode, def, peak)
+		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "got %v", err)
+		Expect(err.Error()).To(ContainSubstring("can't change until the current mode is Ready"))
+
+		By("accepting peak once normal is Ready")
+		markReady(dep)
+		Eventually(conditionOf(mode, modev1alpha1.ConditionReady)).Should(Equal("True/AllSettled"))
+		Expect(tryMode(mode, def, peak)).To(Succeed())
+		Eventually(replicasOf(dep)).Should(Equal(int32(6)))
+
+		By("accepting the default mode even though peak isn't Ready")
+		Eventually(conditionOf(mode, modev1alpha1.ConditionReady)).Should(Equal("False/Scaling"))
+		Expect(tryMode(mode, def, standby)).To(Succeed())
+		Eventually(replicasOf(dep)).Should(Equal(int32(0)))
+
+		By("rejecting peak from standby, whose rule lists only normal, even once it is Ready")
+		markReady(dep)
+		Eventually(conditionOf(mode, modev1alpha1.ConditionReady)).Should(Equal("True/AllSettled"))
+		err = tryMode(mode, def, peak)
+		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "got %v", err)
+		Expect(err.Error()).To(ContainSubstring("transitions don't allow this change"))
+
+		By("lifting the restrictions when the definition drops its transitions")
+		Eventually(func(g Gomega) {
+			live := &modev1alpha1.ClusterModeDefinition{}
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: def}, live)).To(Succeed())
+			live.Spec.Transitions = nil
+			g.Expect(k8sClient.Update(ctx, live)).To(Succeed())
+		}).Should(Succeed())
+		Eventually(func() []modev1alpha1.ModeTransition { return statusOf(mode)().Transitions }).Should(BeEmpty())
+		Expect(tryMode(mode, def, peak)).To(Succeed())
+	})
+})
+
+var _ = Describe("Pods shutting down", func() {
+	It("keeps a scaled-down Deployment Scaling until its pods have gone", func() {
+		ns := newNamespace()
+		def := uniqueName("standard")
+		mode := uniqueName("cluster")
+		createDefinition(def, normal, standby)
+		dep := newDeployment(ns, "web", followLabels(mode), map[string]string{AnnotationReplicas: "normal=3"})
+		applyMode(mode, def, normal)
+		Eventually(replicasOf(dep)).Should(Equal(int32(3)))
+		markReady(dep)
+		Eventually(countsOf(mode)).Should(HaveField("Settled", int32(1)))
+
+		applyMode(mode, def, standby)
+		Eventually(replicasOf(dep)).Should(Equal(int32(0)))
+		setStopping := func(n int32) {
+			GinkgoHelper()
+			Eventually(func(g Gomega) {
+				live := fresh(dep).(*appsv1.Deployment)
+				live.Status = appsv1.DeploymentStatus{ObservedGeneration: live.Generation, TerminatingReplicas: new(n)}
+				g.Expect(k8sClient.Status().Update(ctx, live)).To(Succeed())
+			}).Should(Succeed())
+		}
+		setStopping(2)
+		Eventually(func() string {
+			if u := statusOf(mode)().Unsettled; len(u) == 1 {
+				return u[0].Message
+			}
+			return ""
+		}).Should(Equal("2 pods still to stop"))
+		Expect(conditionOf(mode, modev1alpha1.ConditionReady)()).To(Equal("False/Scaling"))
+
+		setStopping(0)
+		Eventually(countsOf(mode)).Should(Equal(modev1alpha1.WorkloadCounts{Total: 1, Settled: 1}))
 	})
 })

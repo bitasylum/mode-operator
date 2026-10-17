@@ -56,7 +56,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec lists the allowed modes and the default mode.
+            description: spec lists the allowed modes, the default mode, and the transitions.
             properties:
               defaultMode:
                 description: |-
@@ -86,6 +86,50 @@ spec:
                 minItems: 1
                 type: array
                 x-kubernetes-list-type: set
+              transitions:
+                description: |-
+                  transitions, when set, makes the modes a state machine. A ClusterMode
+                  may then move from one mode to another only if the rule for the mode it
+                  is leaving lists the new one, and only once the mode it is leaving is
+                  Ready. A mode with no rule can only be left for defaultMode, which must
+                  have a rule. Moving to defaultMode is always allowed, so the mode manager
+                  can always reset. Without transitions, any mode may follow any other, at
+                  any time.
+                items:
+                  description: ModeTransition lists the modes a ClusterMode may move
+                    to from one mode.
+                  properties:
+                    from:
+                      description: from is the mode the ClusterMode is leaving.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    to:
+                      description: to lists the modes it may move to from there.
+                      items:
+                        description: |-
+                          ModeName is the name of a mode. Mode names are lowercase DNS labels, which
+                          keeps them clear of the characters the replicas annotation uses: "*", "="
+                          and ",".
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                      maxItems: 32
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-type: set
+                  required:
+                  - from
+                  - to
+                  type: object
+                maxItems: 32
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - from
+                x-kubernetes-list-type: map
             required:
             - defaultMode
             - modes
@@ -93,6 +137,15 @@ spec:
             x-kubernetes-validations:
             - message: defaultMode must be one of modes
               rule: self.defaultMode in self.modes
+            - fieldPath: .transitions
+              message: every mode in transitions must be one of modes
+              rule: '!has(self.transitions) || self.transitions.all(t, t.from in self.modes
+                && t.to.all(m, m in self.modes))'
+            - fieldPath: .transitions
+              message: transitions must have a rule for defaultMode, or a ClusterMode
+                that resets to it could never leave it
+              rule: '!has(self.transitions) || self.transitions.exists(t, t.from ==
+                self.defaultMode)'
         required:
         - spec
         type: object

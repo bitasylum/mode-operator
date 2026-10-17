@@ -22,6 +22,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -50,11 +51,17 @@ func (Deployment) ApplyConfiguration(obj client.Object, target int32, annotation
 }
 
 // Progress reports the Deployment as having reached its count once its status
-// is up to date and every replica is ready.
-func (Deployment) Progress(obj client.Object) (int32, bool) {
+// is up to date, every replica is ready, and no pod is still shutting down.
+// status.replicas leaves terminating pods out; Kubernetes reports them in
+// status.terminatingReplicas, where the cluster has that field.
+func (Deployment) Progress(obj client.Object) Progress {
 	d := obj.(*appsv1.Deployment)
 	want := replicasOrDefault(d.Spec.Replicas)
-	reached := d.Status.ObservedGeneration >= d.Generation &&
-		d.Status.Replicas == want && d.Status.ReadyReplicas == want
-	return d.Status.ReadyReplicas, reached
+	stopping := ptr.Deref(d.Status.TerminatingReplicas, 0)
+	return Progress{
+		Ready:    d.Status.ReadyReplicas,
+		Stopping: stopping,
+		Reached: d.Status.ObservedGeneration >= d.Generation &&
+			d.Status.Replicas == want && d.Status.ReadyReplicas == want && stopping == 0,
+	}
 }

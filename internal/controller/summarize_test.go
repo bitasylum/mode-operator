@@ -594,3 +594,84 @@ func TestModeSetBy(t *testing.T) {
 		})
 	}
 }
+
+func TestSummarizeCopiesTransitionsAndDefaultMode(t *testing.T) {
+	def := sumDef.DeepCopy()
+	def.Spec.Transitions = []modev1alpha1.ModeTransition{{From: "peak", To: []modev1alpha1.ModeName{"normal", "standby"}}}
+	st := summarize(cmIn("normal"), def, nil, nil, sumNow, sumTimeout).status
+	if st.DefaultMode != "standby" || !equality.Semantic.DeepEqual(st.Transitions, def.Spec.Transitions) {
+		t.Fatalf("defaultMode %q, transitions %+v; want the definition's", st.DefaultMode, st.Transitions)
+	}
+
+	// With the definition deleted, the last copies are kept, so writes are
+	// still checked against them.
+	cm := cmIn("normal")
+	cm.Status.DefaultMode, cm.Status.Transitions = st.DefaultMode, st.Transitions
+	kept := summarize(cm, nil, nil, nil, sumNow, sumTimeout).status
+	if kept.DefaultMode != "standby" || !equality.Semantic.DeepEqual(kept.Transitions, def.Spec.Transitions) {
+		t.Errorf("with the definition deleted: defaultMode %q, transitions %+v", kept.DefaultMode, kept.Transitions)
+	}
+
+	// A definition that drops its transitions removes the copy.
+	if got := summarize(cm, sumDef, nil, nil, sumNow, sumTimeout).status.Transitions; got != nil {
+		t.Errorf("transitions = %+v after the definition dropped them, want none", got)
+	}
+}
+
+func TestSummarizeWaitsForPodsShuttingDown(t *testing.T) {
+	ann := map[string]string{AnnotationReplicas: "normal=3", AnnotationAppliedMode: "standby",
+		AnnotationReplicasChangedAt: at(-time.Minute)}
+	dep := observedWorkload{kind: workload.Deployment{}, obj: &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "shop", Generation: 2, Annotations: ann},
+		Spec:       appsv1.DeploymentSpec{Replicas: ptr.To[int32](0)},
+		Status:     appsv1.DeploymentStatus{ObservedGeneration: 2, TerminatingReplicas: ptr.To[int32](2)},
+	}}
+	sts := observedWorkload{kind: workload.StatefulSet{}, obj: &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "shop", Generation: 2, Annotations: ann},
+		Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](0)},
+		Status:     appsv1.StatefulSetStatus{ObservedGeneration: 2, Replicas: 1, ReadyReplicas: 1},
+	}}
+	st := summarize(cmIn("standby"), sumDef, []observedWorkload{dep, sts}, nil, sumNow, sumTimeout).status
+	if st.Workloads.Scaling != 2 {
+		t.Fatalf("counts = %+v, want both Scaling", st.Workloads)
+	}
+	messages := map[string]string{}
+	for _, u := range st.Unsettled {
+		messages[u.Kind] = u.Message
+	}
+	if got := messages["Deployment"]; got != "2 pods still to stop" {
+		t.Errorf("Deployment message = %q", got)
+	}
+	if got := messages["StatefulSet"]; got != "1 pod still to stop" {
+		t.Errorf("StatefulSet message = %q", got)
+	}
+	if meta.FindStatusCondition(st.Conditions, modev1alpha1.ConditionReady).Status != metav1.ConditionFalse {
+		t.Errorf("Ready should stay False while pods are shutting down")
+	}
+}
+
+func TestProgressMessage(t *testing.T) {
+	cases := []struct {
+		name    string
+		desired int32
+		p       workload.Progress
+		want    string
+	}{
+		{name: "scaling up", desired: 3, p: workload.Progress{Ready: 1}, want: "1 of 3 replicas ready"},
+		{name: "ready but not settled", desired: 3, p: workload.Progress{Ready: 3},
+			want: "3 replicas ready, waiting for the Deployment to settle at 3"},
+		{name: "scaled to zero", desired: 0, p: workload.Progress{Stopping: 1}, want: "1 pod still to stop"},
+		// A StatefulSet going from 5 to 3 counts all 5 as ready until they stop.
+		{name: "scaling down", desired: 3, p: workload.Progress{Ready: 5, Stopping: 2},
+			want: "3 of 3 replicas ready; 2 pods still to stop"},
+		{name: "a pod stuck terminating", desired: 3, p: workload.Progress{Ready: 2, Stopping: 1},
+			want: "2 of 3 replicas ready; 1 pod still to stop"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := progressMessage("Deployment", c.desired, c.p); got != c.want {
+				t.Errorf("progressMessage = %q, want %q", got, c.want)
+			}
+		})
+	}
+}

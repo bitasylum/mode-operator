@@ -1,0 +1,37 @@
+# When the ClusterModeDefinition has transitions, a ClusterMode may leave a
+# mode only once it is Ready. The CRD's own rule checks status.mode and the
+# Ready condition, but CRD rules can't read metadata.generation, so they
+# can't tell whether that status was computed from the latest spec. Moving to
+# the default mode and back, before mode-operator writes status, would
+# otherwise leave a Ready from before the move in place. This policy also
+# requires status.observedGeneration to match metadata.generation.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: transitions
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["mode.bitasylum.org"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["clustermodes"]
+  matchConditions:
+    - name: mode-changes
+      expression: object.spec.mode != oldObject.spec.mode
+    - name: definition-has-transitions
+      expression: has(oldObject.status) && has(oldObject.status.transitions)
+  validations:
+    - expression: >-
+        (has(oldObject.status.defaultMode) && object.spec.mode == oldObject.status.defaultMode) ||
+        (has(oldObject.status.observedGeneration) &&
+        oldObject.status.observedGeneration == oldObject.metadata.generation &&
+        has(oldObject.status.mode) && oldObject.status.mode == oldObject.spec.mode &&
+        has(oldObject.status.conditions) &&
+        oldObject.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True'))
+      message: >-
+        spec.mode can't change until the current mode is Ready, as mode-operator
+        reports for the latest spec (status.observedGeneration), because the
+        ClusterModeDefinition has transitions
+      reason: Invalid

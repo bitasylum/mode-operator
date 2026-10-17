@@ -18,6 +18,9 @@ resources:
 - ../crd
 - ../rbac
 - ../manager
+# Holds a ClusterMode in its mode until mode-operator reports it Ready, when
+# the definition has transitions.
+- ../admission
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
 #- ../webhook
@@ -31,6 +34,21 @@ resources:
 # Allow metrics traffic from pods in namespaces labeled 'metrics: enabled'.
 # Allow webhook traffic from all sources.
 #- ../network-policy
+
+# The admission policy and its binding are cluster-scoped, but kustomize
+# doesn't know that and gives them the namespace above. Transformers listed
+# here run after the namespace is set. Once a kustomize release knows these
+# kinds, the remove fails because there is no namespace: delete this then.
+transformers:
+- |-
+  apiVersion: builtin
+  kind: PatchTransformer
+  metadata:
+    name: cluster-scoped-admission
+  patch: '[{"op": "remove", "path": "/metadata/namespace"}]'
+  target:
+    group: admissionregistration.k8s.io
+    kind: ValidatingAdmissionPolicy(Binding)?
 
 # Uncomment the patches line if you enable Metrics
 patches:

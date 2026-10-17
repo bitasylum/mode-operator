@@ -29,8 +29,25 @@ import (
 // +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 type ModeName string
 
-// ClusterModeDefinitionSpec lists the allowed modes and the default mode.
+// ModeTransition lists the modes a ClusterMode may move to from one mode.
+type ModeTransition struct {
+	// from is the mode the ClusterMode is leaving.
+	// +required
+	From ModeName `json:"from"`
+
+	// to lists the modes it may move to from there.
+	// +required
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=32
+	To []ModeName `json:"to"`
+}
+
+// ClusterModeDefinitionSpec lists the allowed modes, the default mode, and
+// optionally the transitions allowed between them.
 // +kubebuilder:validation:XValidation:rule="self.defaultMode in self.modes",message="defaultMode must be one of modes"
+// +kubebuilder:validation:XValidation:rule="!has(self.transitions) || self.transitions.all(t, t.from in self.modes && t.to.all(m, m in self.modes))",message="every mode in transitions must be one of modes",fieldPath=".transitions"
+// +kubebuilder:validation:XValidation:rule="!has(self.transitions) || self.transitions.exists(t, t.from == self.defaultMode)",message="transitions must have a rule for defaultMode, or a ClusterMode that resets to it could never leave it",fieldPath=".transitions"
 type ClusterModeDefinitionSpec struct {
 	// modes lists the modes that ClusterModes using this definition may be in.
 	// Names are unique. The limit of 32 keeps CEL rules that search the list
@@ -47,6 +64,20 @@ type ClusterModeDefinitionSpec struct {
 	// modes.
 	// +required
 	DefaultMode ModeName `json:"defaultMode"`
+
+	// transitions, when set, makes the modes a state machine. A ClusterMode
+	// may then move from one mode to another only if the rule for the mode it
+	// is leaving lists the new one, and only once the mode it is leaving is
+	// Ready. A mode with no rule can only be left for defaultMode, which must
+	// have a rule. Moving to defaultMode is always allowed, so the mode manager
+	// can always reset. Without transitions, any mode may follow any other, at
+	// any time.
+	// +optional
+	// +listType=map
+	// +listMapKey=from
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=32
+	Transitions []ModeTransition `json:"transitions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -66,7 +97,7 @@ type ClusterModeDefinition struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec lists the allowed modes and the default mode.
+	// spec lists the allowed modes, the default mode, and the transitions.
 	// +required
 	Spec ClusterModeDefinitionSpec `json:"spec"`
 }

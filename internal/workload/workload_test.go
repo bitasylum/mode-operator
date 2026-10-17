@@ -147,12 +147,52 @@ func TestProgress(t *testing.T) {
 		for _, c := range cases {
 			t.Run(rk.kind.Name()+"/"+c.name, func(t *testing.T) {
 				obj := rk.build(c.replicas, c.generation, c.observedGeneration, c.statusReplicas, c.ready)
-				ready, reached := rk.kind.Progress(obj)
-				if ready != c.ready || reached != c.wantReached {
-					t.Errorf("Progress = %d, %v; want %d, %v", ready, reached, c.ready, c.wantReached)
+				p := rk.kind.Progress(obj)
+				if p.Ready != c.ready || p.Reached != c.wantReached {
+					t.Errorf("Progress = %+v; want ready %d, reached %v", p, c.ready, c.wantReached)
 				}
 			})
 		}
+	}
+}
+
+// A Deployment leaves terminating pods out of status.replicas and reports
+// them in status.terminatingReplicas, where the cluster has that field.
+func TestDeploymentWaitsForPodsShuttingDown(t *testing.T) {
+	scaledDown := func(terminating *int32) *appsv1.Deployment {
+		return &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "web", Generation: 3},
+			Spec:       appsv1.DeploymentSpec{Replicas: ptr.To[int32](0)},
+			Status:     appsv1.DeploymentStatus{ObservedGeneration: 3, TerminatingReplicas: terminating},
+		}
+	}
+	cases := []struct {
+		name        string
+		terminating *int32
+		want        Progress
+	}{
+		{name: "pods still shutting down", terminating: ptr.To[int32](2), want: Progress{Stopping: 2}},
+		{name: "every pod gone", terminating: ptr.To[int32](0), want: Progress{Reached: true}},
+		{name: "a cluster that doesn't report terminating pods", terminating: nil, want: Progress{Reached: true}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := (Deployment{}).Progress(scaledDown(c.terminating)); got != c.want {
+				t.Errorf("Progress = %+v, want %+v", got, c.want)
+			}
+		})
+	}
+}
+
+// A StatefulSet counts its pods in status.replicas until they have gone.
+func TestStatefulSetWaitsForPodsShuttingDown(t *testing.T) {
+	s := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "db", Generation: 3},
+		Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](0)},
+		Status:     appsv1.StatefulSetStatus{ObservedGeneration: 3, Replicas: 2, ReadyReplicas: 2},
+	}
+	if got, want := (StatefulSet{}).Progress(s), (Progress{Ready: 2, Stopping: 2}); got != want {
+		t.Errorf("Progress = %+v, want %+v", got, want)
 	}
 }
 

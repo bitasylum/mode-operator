@@ -89,6 +89,19 @@ crds:
 #     - name: standard
 #       modes: [normal, peak, offpeak, maintenance, standby]
 #       defaultMode: standby
+#       # Optional: make the modes a state machine. Each mode may then move
+#       # only to the modes listed for it, and only once it is Ready. Any
+#       # mode may move to defaultMode, a mode with no rule only to
+#       # defaultMode, and defaultMode must have a rule.
+#       transitions:
+#         - from: normal
+#           to: [peak, offpeak]
+#         - from: peak
+#           to: [normal]
+#         - from: offpeak
+#           to: [normal]
+#         - from: standby
+#           to: [normal, maintenance]
 # helm install can't create definitions in the same release as the CRDs,
 # because it checks every object's kind first: install without definitions,
 # then add them with helm upgrade. Argo CD can do it in one sync.

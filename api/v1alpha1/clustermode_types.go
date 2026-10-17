@@ -163,7 +163,9 @@ type UnsettledWorkload struct {
 	// applied is the workload's current count.
 	// +optional
 	Applied int32 `json:"applied"`
-	// ready is the workload's ready count.
+	// ready is the workload's ready count, as it reports it. A StatefulSet
+	// counts its ready pods above its count too, so this can be above
+	// desired while those pods are still to stop.
 	// +optional
 	Ready int32 `json:"ready"`
 	// since is when the workload entered its state, where that is known.
@@ -191,6 +193,22 @@ type ClusterModeStatus struct {
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=32
 	Modes []ModeName `json:"modes,omitempty"`
+
+	// defaultMode is mode-operator's copy of the definition's defaultMode.
+	// Changes of spec.mode to it are always allowed.
+	// +optional
+	DefaultMode ModeName `json:"defaultMode,omitempty"`
+
+	// transitions is mode-operator's copy of the definition's transitions.
+	// When it is set, a change of spec.mode must follow it, and must wait
+	// until the current mode is Ready. Like modes, it keeps its last value if
+	// the definition is deleted.
+	// +optional
+	// +listType=map
+	// +listMapKey=from
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=32
+	Transitions []ModeTransition `json:"transitions,omitempty"`
 
 	// mode is the mode this status describes.
 	// +optional
@@ -231,6 +249,7 @@ type ClusterModeStatus struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=type
+	// +kubebuilder:validation:MaxItems=8
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
@@ -239,6 +258,8 @@ type ClusterModeStatus struct {
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 63",message="name must be 63 characters or fewer, so that it can be used as a label value"
 // +kubebuilder:validation:XValidation:rule="self.spec.mode == oldSelf.spec.mode || !has(self.status) || !has(self.status.modes) || self.spec.mode in self.status.modes",message="spec.mode must be one of the modes in the ClusterModeDefinition (status.modes)",fieldPath=".spec.mode"
+// +kubebuilder:validation:XValidation:rule="self.spec.mode == oldSelf.spec.mode || !has(self.status) || !has(self.status.transitions) || (has(self.status.defaultMode) && self.spec.mode == self.status.defaultMode) || self.status.transitions.exists(t, t.from == oldSelf.spec.mode && self.spec.mode in t.to)",message="the ClusterModeDefinition's transitions don't allow this change of spec.mode (status.transitions)",fieldPath=".spec.mode"
+// +kubebuilder:validation:XValidation:rule="self.spec.mode == oldSelf.spec.mode || !has(self.status) || !has(self.status.transitions) || (has(self.status.defaultMode) && self.spec.mode == self.status.defaultMode) || (has(self.status.mode) && self.status.mode == oldSelf.spec.mode && has(self.status.conditions) && self.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True'))",message="spec.mode can't change until the current mode is Ready, because the ClusterModeDefinition has transitions",fieldPath=".spec.mode"
 // +kubebuilder:printcolumn:name="Mode",type=string,JSONPath=`.spec.mode`
 // +kubebuilder:printcolumn:name="Applied",type=string,JSONPath=`.status.conditions[?(@.type=="Applied")].reason`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`

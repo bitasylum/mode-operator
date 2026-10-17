@@ -104,6 +104,8 @@ func summarize(cm *modev1alpha1.ClusterMode, def *modev1alpha1.ClusterModeDefini
 	st := modev1alpha1.ClusterModeStatus{
 		ObservedGeneration: cm.Generation,
 		Modes:              cm.Status.Modes,
+		DefaultMode:        cm.Status.DefaultMode,
+		Transitions:        cm.Status.Transitions,
 		Mode:               cm.Spec.Mode,
 		ModeChangedAt:      cm.Status.ModeChangedAt,
 		ModeSetBy:          modeSetBy(cm),
@@ -117,13 +119,15 @@ func summarize(cm *modev1alpha1.ClusterMode, def *modev1alpha1.ClusterModeDefini
 	mode := string(cm.Spec.Mode)
 
 	if def == nil {
-		// Keep the last copy of the modes, so writes are still checked.
+		// Keep the last copies of the modes and transitions, so writes are
+		// still checked.
 		setBlockedConditions(&st, nowTS, modev1alpha1.ReasonDefinitionNotFound,
 			fmt.Sprintf("ClusterModeDefinition %q not found; workloads are left as they are", cm.Spec.Definition))
 		s.status, s.history = st, history
 		return s
 	}
-	st.Modes = slices.Clone(def.Spec.Modes)
+	spec := def.Spec.DeepCopy()
+	st.Modes, st.DefaultMode, st.Transitions = spec.Modes, spec.DefaultMode, spec.Transitions
 	modes := sets.New[string]()
 	for _, m := range def.Spec.Modes {
 		modes.Insert(string(m))
@@ -172,12 +176,12 @@ func classify(w observedWorkload, mode string, modes sets.Set[string], modeChang
 	ann := w.obj.GetAnnotations()
 	ua := parseUserAnnotations(ann, modes, w.kind.MaxCount())
 	cur := w.kind.Current(w.obj)
-	ready, reached := w.kind.Progress(w.obj)
+	progress := w.kind.Progress(w.obj)
 	r := report{
 		w:                 w,
 		invalidAnnotation: ua.replicasErr != nil || ua.delayErr != nil || ua.settleTimeoutErr != nil,
 		applied:           cur,
-		ready:             ready,
+		ready:             progress.Ready,
 	}
 
 	if ua.replicasErr != nil {
@@ -214,7 +218,7 @@ func classify(w observedWorkload, mode string, modes sets.Set[string], modeChang
 
 	nowTS := now.UTC().Truncate(time.Second)
 	h, known := history[w.key()]
-	if reached {
+	if progress.Reached {
 		r.state = modev1alpha1.WorkloadSettled
 		if h.settledSince.IsZero() {
 			h.settledSince = nowTS
@@ -249,17 +253,38 @@ func classify(w observedWorkload, mode string, modes sets.Set[string], modeChang
 	if ua.settleTimeout > 0 {
 		timeout = ua.settleTimeout
 	}
-	progress := fmt.Sprintf("%d of %d replicas ready", ready, desired)
-	if ready >= desired {
-		progress = fmt.Sprintf("%d replicas ready, waiting for the %s to settle at %d", ready, w.kind.Name(), desired)
-	}
+	where := progressMessage(w.kind.Name(), desired, progress)
 	if deadline := start.Add(timeout); now.Before(deadline) {
-		r.state, r.message, r.stallAt = modev1alpha1.WorkloadScaling, progress, deadline
+		r.state, r.message, r.stallAt = modev1alpha1.WorkloadScaling, where, deadline
 		return r
 	}
 	r.state = modev1alpha1.WorkloadStalled
-	r.message = fmt.Sprintf("Not settled within the %s settle timeout: %s", timeout, progress)
+	r.message = fmt.Sprintf("Not settled within the %s settle timeout: %s", timeout, where)
 	return r
+}
+
+// progressMessage says how far a workload short of its count has got. While
+// pods are still to stop, the ready count shown stops at desired, because a
+// StatefulSet counts its ready pods above the count too.
+func progressMessage(kind string, desired int32, p workload.Progress) string {
+	switch {
+	case p.Stopping > 0 && desired == 0:
+		return fmt.Sprintf("%d %s still to stop", p.Stopping, pods(p.Stopping))
+	case p.Stopping > 0:
+		return fmt.Sprintf("%d of %d replicas ready; %d %s still to stop",
+			min(p.Ready, desired), desired, p.Stopping, pods(p.Stopping))
+	case p.Ready < desired:
+		return fmt.Sprintf("%d of %d replicas ready", p.Ready, desired)
+	default:
+		return fmt.Sprintf("%d replicas ready, waiting for the %s to settle at %d", p.Ready, kind, desired)
+	}
+}
+
+func pods(n int32) string {
+	if n == 1 {
+		return "pod"
+	}
+	return "pods"
 }
 
 // addClamped adds n to *sum, stopping at the largest int32 rather than

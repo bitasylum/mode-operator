@@ -55,8 +55,9 @@ helm install mode-operator ./dist/chart --namespace mode-operator-system
 - One install per cluster: the CRDs and the controller are cluster-wide.
 
 The chart installs both CRDs, the controller (2 replicas with leader
-election), its RBAC, and the roles for people and for the mode manager
-described under [Access](#access). The main values:
+election), its RBAC, the roles for people and for the mode manager described
+under [Access](#access), and the admission policy described under
+[Transitions](#transitions). The main values:
 
 | Value | Default | Meaning |
 |---|---|---|
@@ -154,6 +155,74 @@ mode-operator writes three annotations of its own: `applied-mode`,
   workloads are left as they are until the mode changes.
 - **A ClusterMode's definition can't be changed** once set.
 
+### Transitions
+
+A definition can also say which mode may follow which, making the modes a
+state machine:
+
+```yaml
+spec:
+  modes: [normal, peak, offpeak, maintenance, standby]
+  defaultMode: standby
+  transitions:
+    - from: normal
+      to: [peak, offpeak]
+    - from: peak
+      to: [normal]
+    - from: offpeak
+      to: [normal]
+    - from: standby
+      to: [normal, maintenance]
+```
+
+With `transitions` set, the API server accepts a change of `spec.mode` only
+if:
+
+- the rule for the current mode lists the new one; a mode with no rule, such
+  as `maintenance` above, can only be left for the default mode; and
+- the current mode is `Ready`, in a status mode-operator computed from the
+  latest spec: every workload that isn't `Invalid` was `Settled`,
+  `status.mode` is the current mode, and `status.observedGeneration` matches
+  `metadata.generation`.
+
+**Changing to `defaultMode` is always allowed**, whatever the current mode
+and however far it has got, so the mode manager can reset after a full
+cluster reboot, and a maintainer has a way out when a workload is stuck.
+Here, peak reaches maintenance by way of standby: the move to standby is
+always allowed, and the move on to maintenance waits until standby is
+`Ready`. Without `transitions`, any mode may follow any other, at any time.
+
+- **The default mode needs a rule**, or a ClusterMode that resets to it could
+  never leave it, and `transitions` can't be an empty list. The API server
+  rejects both.
+- **With the definition deleted, or the ClusterMode in `InvalidMode`,**
+  `Ready` is False, so only the default mode can be reached.
+- **mode-operator copies the rules** into the ClusterMode's
+  `status.transitions` and `status.defaultMode`, which is what the API server
+  checks against. Until mode-operator has first written the status of a new
+  ClusterMode, changes aren't checked.
+- **The up-to-date check is an admission policy,** `mode-operator-transitions`,
+  which the chart and `config/default` install; the CRD's own rules can't
+  read `metadata.generation`. Without it, a ClusterMode moved to the default
+  mode and back before mode-operator writes status could leave on the `Ready`
+  from before.
+- **Whenever mode-operator isn't writing status**, while it is down or after
+  a full cluster restart until its first status write, the last status it
+  wrote counts, even if the workloads have changed since. The mode manager's
+  reset to the default mode after a restart doesn't change the generation if
+  the ClusterMode is already in it.
+
+To get a ClusterMode out of a stuck mode:
+
+1. Change to the default mode, which is always allowed.
+2. If the default mode can't become `Ready` either, remove `transitions` from
+   the definition. mode-operator clears `status.transitions` and the
+   restrictions go.
+3. If mode-operator isn't running, a cluster admin can clear the copy by
+   hand: `kubectl patch clustermode default --subresource=status --type=json
+   -p '[{"op":"remove","path":"/status/transitions"}]'`. mode-operator copies
+   it back from the definition when it next runs, so do step 2 as well.
+
 ## Changing the mode by hand
 
 Maintainers can override the mode:
@@ -162,7 +231,8 @@ Maintainers can override the mode:
 kubectl patch clustermode default --type=merge -p '{"spec":{"mode":"maintenance"}}'
 ```
 
-The API server rejects a mode that isn't in the definition. The mode manager
+The API server rejects a mode that isn't in the definition, and a change the
+definition's transitions don't allow. The mode manager
 adopts the new mode and carries on from it; it may change the mode again
 later as usual. `kubectl get clustermode -o wide` shows the field manager
 that set the mode in the `SET-BY` column, for example `kubectl-patch`. The
@@ -185,11 +255,32 @@ Every workload is in exactly one state:
 | `Pending` | waiting out its scale-to-zero delay |
 | `Applying` | mode-operator hasn't written the mode's replicas yet; normally seconds |
 | `Stalled` | hasn't reached its replicas within its settle timeout |
-| `Scaling` | its replicas are set, and its pods aren't all ready yet |
+| `Scaling` | its replicas are set, and its pods aren't all ready yet, or some are still to stop |
 | `Settled` | its replicas are set and reached |
 
 A workload that falls short again after settling, for example during an
 image rollout, gets a fresh settle timeout.
+
+A workload is `Settled` only while none of its pods is still to stop, so after
+a scale-down `Ready` means the old pods have gone and released what they
+used, not just stopped being counted.
+
+- **Each pod can take up to its `terminationGracePeriodSeconds` to stop** (30
+  seconds by default), and a StatefulSet with `podManagementPolicy:
+  OrderedReady` stops its pods one at a time. Give such workloads a
+  `settle-timeout` longer than that.
+- **For a Deployment, any pod shutting down counts,** not only after a
+  scale-down: an evicted pod, or an old pod during a rollout. Deployments
+  report them in `status.terminatingReplicas`, a beta field on by default in
+  recent Kubernetes; on a cluster without it, a Deployment's scale-down
+  settles once the count drops.
+- **A StatefulSet counts the pods above its count** until they have gone, and
+  any other pod once it is no longer ready.
+- **A pod stuck on a node that has gone down** keeps either kind unsettled
+  until the node comes back, its Node object is deleted, or someone
+  force-deletes the pod. The workload goes `Stalled`, the ClusterMode
+  `Degraded`, and with `transitions` only the default mode can be reached
+  until then.
 
 | Condition | True when | Reasons |
 |---|---|---|
@@ -211,6 +302,12 @@ short:
   doesn't exist.
 - Write the mode before broadcasting it, use only modes from the definition,
   and never write `status`.
+- If the definition has `transitions`, move only along them, and only once
+  `status.observedGeneration` equals `metadata.generation`, `status.mode` is
+  the current mode and the `Ready` condition is True. Plan paths of several
+  steps itself, for example peak → standby → maintenance with the rules
+  under [Transitions](#transitions). A reset to `defaultMode` is always
+  allowed.
 - Run one writer at a time (`strategy: Recreate` while it has one replica).
 - Bind its ServiceAccount to `mode-operator-clustermode-writer`, which allows
   only the ClusterModes in the chart's `modeManager.clusterModes`.

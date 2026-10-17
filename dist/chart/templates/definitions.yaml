@@ -24,4 +24,8 @@ spec:
   modes:
     {{- toYaml (required (printf "definition %s needs modes" .name) .modes) | nindent 4 }}
   defaultMode: {{ required (printf "definition %s needs a defaultMode" .name) .defaultMode | quote }}
+  {{- with .transitions }}
+  transitions:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}

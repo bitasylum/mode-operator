@@ -32,11 +32,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
+	"github.com/Audiobuzz/mode-operator/test/utils"
 )
 
-// This suite checks the validation built into the CRDs, against a real API
-// server. It runs no controller: where a test needs status.modes, it writes
-// the status itself, as mode-operator would.
+// This suite checks the validation built into the CRDs, and the admission
+// policies in config/admission, against a real API server. It runs no
+// controller: where a test needs status.modes, it writes the status itself,
+// as mode-operator would.
 
 var (
 	ctx       context.Context
@@ -74,6 +76,9 @@ var _ = BeforeSuite(func() {
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
 	Expect(err).NotTo(HaveOccurred())
+
+	By("installing the admission policies")
+	Expect(utils.InstallAdmissionPolicies(ctx, k8sClient, filepath.Join("..", "..", "config", "admission"))).To(Succeed())
 })
 
 var _ = AfterSuite(func() {

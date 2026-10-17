@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -41,6 +42,11 @@ const (
 	notInDefinition = "spec.mode must be one of the modes in the ClusterModeDefinition"
 	// standby is the default mode in the test definitions.
 	standby = "standby"
+	// notAllowed and notReady are the CEL messages for the transition rules.
+	notAllowed = "transitions don't allow this change of spec.mode"
+	notReady   = "can't change until the current mode is Ready"
+	// staleStatus is the transitions admission policy's message.
+	staleStatus = "as mode-operator reports for the latest spec"
 )
 
 var standardModes = []modev1alpha1.ModeName{"normal", "peak", "offpeak", "maintenance", standby}
@@ -93,6 +99,14 @@ func setStatusModes(name string, modes ...modev1alpha1.ModeName) error {
 	}
 	patch := fmt.Appendf(nil, `{"status":{"modes":[%s]}}`, strings.Join(quoted, ","))
 	return k8sClient.Status().Patch(ctx, cm, client.RawPatch(types.MergePatchType, patch))
+}
+
+// ready is a Ready condition with the given status.
+func ready(status string) []map[string]any {
+	return []map[string]any{{
+		"type": "Ready", "status": status, "reason": "Test", "message": "set by the test",
+		"lastTransitionTime": "2026-10-17T00:00:00Z",
+	}}
 }
 
 func getMode(name string) modev1alpha1.ModeName {
@@ -236,5 +250,161 @@ var _ = Describe("ClusterMode validation", func() {
 			Expect(applyAsModeManager(name, "standard", "normal")).To(Succeed())
 			expectInvalid(applyAsModeManager(name, "standard", standby), notInDefinition)
 		})
+	})
+})
+
+var _ = Describe("ClusterModeDefinition transitions validation", func() {
+	create := func(transitions []modev1alpha1.ModeTransition) error {
+		def := &modev1alpha1.ClusterModeDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "transitions"},
+			Spec: modev1alpha1.ClusterModeDefinitionSpec{
+				Modes: standardModes, DefaultMode: standby, Transitions: transitions,
+			},
+		}
+		deleteAfter(def)
+		return k8sClient.Create(ctx, def)
+	}
+	rule := func(from modev1alpha1.ModeName, to ...modev1alpha1.ModeName) modev1alpha1.ModeTransition {
+		return modev1alpha1.ModeTransition{From: from, To: to}
+	}
+
+	It("accepts transitions between its modes", func() {
+		Expect(create([]modev1alpha1.ModeTransition{
+			rule("peak", "normal", standby), rule(standby, "normal", "peak", "maintenance"),
+		})).To(Succeed())
+	})
+
+	DescribeTable("rejects invalid transitions",
+		func(transitions []modev1alpha1.ModeTransition, want string) {
+			expectInvalid(create(transitions), want)
+		},
+		Entry("from a mode it doesn't have", []modev1alpha1.ModeTransition{rule("holiday", standby)},
+			"every mode in transitions must be one of modes"),
+		Entry("to a mode it doesn't have", []modev1alpha1.ModeTransition{rule("peak", "holiday")},
+			"every mode in transitions must be one of modes"),
+		Entry("with two rules for one mode", []modev1alpha1.ModeTransition{rule("peak", standby), rule("peak", "normal")},
+			"Duplicate value"),
+		Entry("with a rule that allows nothing", []modev1alpha1.ModeTransition{rule("peak")},
+			"spec.transitions[0].to"),
+		Entry("without a rule for the default mode", []modev1alpha1.ModeTransition{rule("peak", "normal")},
+			"transitions must have a rule for defaultMode"),
+	)
+
+	// An empty list would otherwise mean no restrictions at all. The typed
+	// client leaves an empty list out, so send it raw.
+	It("rejects an empty list of transitions", func() {
+		def := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": modev1alpha1.GroupVersion.String(),
+			"kind":       "ClusterModeDefinition",
+			"metadata":   map[string]any{"name": "transitions"},
+			"spec": map[string]any{
+				"modes": []any{"normal", standby}, "defaultMode": standby, "transitions": []any{},
+			},
+		}}
+		deleteAfter(def)
+		expectInvalid(k8sClient.Create(ctx, def), "spec.transitions in body should have at least 1 items")
+	})
+})
+
+var _ = Describe("ClusterMode transition rules", func() {
+	const name = "transitions"
+	// setStatus writes fields of the ClusterMode's status through the status
+	// subresource, standing in for mode-operator.
+	setStatus := func(status map[string]any) {
+		GinkgoHelper()
+		patch, err := json.Marshal(map[string]any{"status": status})
+		Expect(err).NotTo(HaveOccurred())
+		cm := &modev1alpha1.ClusterMode{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		Expect(k8sClient.Status().Patch(ctx, cm, client.RawPatch(types.MergePatchType, patch))).To(Succeed())
+	}
+	// normal and peak may move to each other, and standby, the default, to
+	// normal; every other mode only to standby.
+	transitions := []map[string]any{
+		{"from": "normal", "to": []string{"peak"}},
+		{"from": "peak", "to": []string{"normal"}},
+		{"from": standby, "to": []string{"normal"}},
+	}
+	// inMode creates the ClusterMode in mode, with mode-operator's status saying
+	// that mode is in the given Ready state, computed from the latest spec.
+	inMode := func(mode, readyStatus string) {
+		GinkgoHelper()
+		deleteAfter(&modev1alpha1.ClusterMode{ObjectMeta: metav1.ObjectMeta{Name: name}})
+		Expect(applyAsModeManager(name, "standard", mode)).To(Succeed())
+		cm := &modev1alpha1.ClusterMode{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, cm)).To(Succeed())
+		setStatus(map[string]any{
+			"observedGeneration": cm.Generation,
+			"modes":              standardModes, "defaultMode": standby, "transitions": transitions,
+			"mode": mode, "conditions": ready(readyStatus),
+		})
+	}
+
+	It("allows a listed transition once the current mode is Ready", func() {
+		inMode("normal", "True")
+		Expect(applyAsModeManager(name, "standard", "peak")).To(Succeed())
+	})
+
+	It("rejects a transition the rules don't list, even when Ready", func() {
+		inMode("normal", "True")
+		expectInvalid(applyAsModeManager(name, "standard", "offpeak"), notAllowed)
+		expectInvalid(patchModeAsMaintainer(name, "offpeak"), notAllowed)
+		Expect(getMode(name)).To(Equal(modev1alpha1.ModeName("normal")))
+	})
+
+	It("rejects leaving a mode that isn't Ready", func() {
+		inMode("normal", "False")
+		expectInvalid(applyAsModeManager(name, "standard", "peak"), notReady)
+		expectInvalid(patchModeAsMaintainer(name, "peak"), notReady)
+	})
+
+	It("rejects leaving a mode whose status mode-operator hasn't caught up with", func() {
+		inMode("normal", "True")
+		// The status still describes peak, an earlier mode.
+		setStatus(map[string]any{"mode": "peak"})
+		expectInvalid(applyAsModeManager(name, "standard", "peak"), notReady)
+	})
+
+	// The CRD's rules can't read metadata.generation; the admission policy in
+	// config/admission can.
+	It("rejects leaving a mode on a Ready status from before the last change of mode", func() {
+		inMode(standby, "True")
+		// Out to normal and straight back to the default, before mode-operator
+		// has written status. The status still says standby is Ready, which
+		// the CRD's rule accepts, but it is from two generations ago.
+		Expect(applyAsModeManager(name, "standard", "normal")).To(Succeed())
+		Expect(applyAsModeManager(name, "standard", standby)).To(Succeed())
+		expectInvalid(applyAsModeManager(name, "standard", "normal"), staleStatus)
+		expectInvalid(patchModeAsMaintainer(name, "normal"), staleStatus)
+
+		By("allowing it once mode-operator has caught up")
+		cm := &modev1alpha1.ClusterMode{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, cm)).To(Succeed())
+		setStatus(map[string]any{"observedGeneration": cm.Generation})
+		Expect(applyAsModeManager(name, "standard", "normal")).To(Succeed())
+	})
+
+	It("rejects leaving a mode on a Ready status that doesn't say which generation it describes", func() {
+		inMode("normal", "True")
+		setStatus(map[string]any{"observedGeneration": nil})
+		expectInvalid(applyAsModeManager(name, "standard", "peak"), staleStatus)
+	})
+
+	It("always allows the default mode, so the mode manager can reset", func() {
+		inMode("normal", "False")
+		Expect(applyAsModeManager(name, "standard", standby)).To(Succeed())
+	})
+
+	It("lets a mode with no rule be left only for the default mode", func() {
+		inMode("maintenance", "True")
+		expectInvalid(applyAsModeManager(name, "standard", "normal"), notAllowed)
+		Expect(patchModeAsMaintainer(name, standby)).To(Succeed())
+	})
+
+	It("doesn't restrict a definition without transitions", func() {
+		deleteAfter(&modev1alpha1.ClusterMode{ObjectMeta: metav1.ObjectMeta{Name: name}})
+		Expect(applyAsModeManager(name, "standard", "normal")).To(Succeed())
+		setStatus(map[string]any{"modes": standardModes, "defaultMode": standby, "mode": "normal",
+			"conditions": ready("False")})
+		Expect(applyAsModeManager(name, "standard", "offpeak")).To(Succeed())
 	})
 })

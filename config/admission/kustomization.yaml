@@ -1,0 +1,10 @@
+resources:
+- transitions_policy.yaml
+- transitions_policy_binding.yaml
+# Set here rather than in the files, which hack/sync-chart.sh copies into the
+# chart with the chart's own labels.
+labels:
+- pairs:
+    app.kubernetes.io/name: mode-operator
+    app.kubernetes.io/managed-by: kustomize
+  includeSelectors: false

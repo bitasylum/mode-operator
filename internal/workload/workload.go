@@ -43,9 +43,21 @@ type Kind interface {
 	// ApplyConfiguration returns the server-side apply request that sets the
 	// count field for target and the given annotations, and nothing else.
 	ApplyConfiguration(obj client.Object, target int32, annotations map[string]string) runtime.ApplyConfiguration
-	// Progress returns the workload's ready count and whether it has reached
-	// its count.
-	Progress(obj client.Object) (ready int32, reached bool)
+	// Progress reports how far the workload has got towards its count.
+	Progress(obj client.Object) Progress
+}
+
+// Progress is how far a workload has got towards its count.
+type Progress struct {
+	// Ready is the number of ready replicas.
+	Ready int32
+	// Stopping is the number of pods still to stop, where the kind reports
+	// it: a Deployment's terminating pods, or a StatefulSet's pods above its
+	// count, which it may not have told to stop yet.
+	Stopping int32
+	// Reached is true once the workload runs exactly its count, all of it
+	// ready, with none of the pods the kind reports in Stopping left.
+	Reached bool
 }
 
 // replicasOrDefault returns *replicas, or 1 when it's nil, as the API server

@@ -37,6 +37,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	modev1alpha1 "github.com/Audiobuzz/mode-operator/api/v1alpha1"
+	"github.com/Audiobuzz/mode-operator/test/utils"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -90,6 +91,11 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	// Before the manager starts, because the check that the policy is
+	// enforced writes ClusterMode status.
+	By("installing the admission policies")
+	Expect(utils.InstallAdmissionPolicies(ctx, k8sClient, filepath.Join("..", "..", "config", "admission"))).To(Succeed())
 
 	By("starting the manager with every reconciler, set up as in cmd/main.go")
 	kinds := BuiltinKinds()

@@ -167,10 +167,19 @@ spec:
                   - status
                   - type
                   type: object
+                maxItems: 8
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              defaultMode:
+                description: |-
+                  defaultMode is mode-operator's copy of the definition's defaultMode.
+                  Changes of spec.mode to it are always allowed.
+                maxLength: 63
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
               invalidAnnotations:
                 description: |-
                   invalidAnnotations is the number of workloads with any annotation error,
@@ -237,6 +246,47 @@ spec:
                     format: int32
                     type: integer
                 type: object
+              transitions:
+                description: |-
+                  transitions is mode-operator's copy of the definition's transitions.
+                  When it is set, a change of spec.mode must follow it, and must wait
+                  until the current mode is Ready. Like modes, it keeps its last value if
+                  the definition is deleted.
+                items:
+                  description: ModeTransition lists the modes a ClusterMode may move
+                    to from one mode.
+                  properties:
+                    from:
+                      description: from is the mode the ClusterMode is leaving.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    to:
+                      description: to lists the modes it may move to from there.
+                      items:
+                        description: |-
+                          ModeName is the name of a mode. Mode names are lowercase DNS labels, which
+                          keeps them clear of the characters the replicas annotation uses: "*", "="
+                          and ",".
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                      maxItems: 32
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-type: set
+                  required:
+                  - from
+                  - to
+                  type: object
+                maxItems: 32
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - from
+                x-kubernetes-list-type: map
               unsettled:
                 description: |-
                   unsettled lists up to 20 workloads that aren't Settled, most urgent
@@ -277,7 +327,10 @@ spec:
                       minLength: 1
                       type: string
                     ready:
-                      description: ready is the workload's ready count.
+                      description: |-
+                        ready is the workload's ready count, as it reports it. A StatefulSet
+                        counts its ready pods above its count too, so this can be above
+                        desired while those pods are still to stop.
                       format: int32
                       type: integer
                     since:
@@ -357,6 +410,21 @@ spec:
             (status.modes)
           rule: self.spec.mode == oldSelf.spec.mode || !has(self.status) || !has(self.status.modes)
             || self.spec.mode in self.status.modes
+        - fieldPath: .spec.mode
+          message: the ClusterModeDefinition's transitions don't allow this change
+            of spec.mode (status.transitions)
+          rule: self.spec.mode == oldSelf.spec.mode || !has(self.status) || !has(self.status.transitions)
+            || (has(self.status.defaultMode) && self.spec.mode == self.status.defaultMode)
+            || self.status.transitions.exists(t, t.from == oldSelf.spec.mode && self.spec.mode
+            in t.to)
+        - fieldPath: .spec.mode
+          message: spec.mode can't change until the current mode is Ready, because
+            the ClusterModeDefinition has transitions
+          rule: self.spec.mode == oldSelf.spec.mode || !has(self.status) || !has(self.status.transitions)
+            || (has(self.status.defaultMode) && self.spec.mode == self.status.defaultMode)
+            || (has(self.status.mode) && self.status.mode == oldSelf.spec.mode &&
+            has(self.status.conditions) && self.status.conditions.exists(c, c.type
+            == 'Ready' && c.status == 'True'))
     served: true
     storage: true
     subresources:

@@ -50,11 +50,17 @@ func (StatefulSet) ApplyConfiguration(obj client.Object, target int32, annotatio
 }
 
 // Progress reports the StatefulSet as having reached its count once its
-// status is up to date and every replica is ready.
-func (StatefulSet) Progress(obj client.Object) (int32, bool) {
+// status is up to date and every replica is ready. status.replicas counts
+// pods until they have gone, so a scale-down isn't reached while pods above
+// the count are still to stop. readyReplicas includes those pods while they
+// are ready.
+func (StatefulSet) Progress(obj client.Object) Progress {
 	s := obj.(*appsv1.StatefulSet)
 	want := replicasOrDefault(s.Spec.Replicas)
-	reached := s.Status.ObservedGeneration >= s.Generation &&
-		s.Status.Replicas == want && s.Status.ReadyReplicas == want
-	return s.Status.ReadyReplicas, reached
+	return Progress{
+		Ready:    s.Status.ReadyReplicas,
+		Stopping: max(0, s.Status.Replicas-want),
+		Reached: s.Status.ObservedGeneration >= s.Generation &&
+			s.Status.Replicas == want && s.Status.ReadyReplicas == want,
+	}
 }

@@ -79,10 +79,38 @@ with_resource_names() {
   mv "$file.tmp" "$file"
 }
 
-mkdir -p "$CHART/crd" "$CHART/rbac"
+# admission SRC DEST: a ValidatingAdmissionPolicy or its binding, named
+# <fullname>-NAME where NAME is its name in SRC. A binding's policyName is
+# renamed the same way.
+admission() {
+  local src=$1 dest=$2
+  grep -q '{{' "$src" && die "$src contains {{, which Helm would read as a template"
+  grep -q '^  name: ' "$src" || die "$src has no metadata.name"
+  grep -qE "^  (name|policyName): [\"']" "$src" && die "$src quotes a name; write it bare"
+  grep -q '^  labels:$' "$src" && die "$src has labels, which the chart sets"
+  {
+    echo "$HEADER from $src. Don't edit."
+    awk '
+      function named(name) {
+        return "{{ include \"mode-operator.resourceName\" (dict \"suffix\" \"" name "\" \"context\" $) }}"
+      }
+      /^  name: / && !done {
+        print "  name: " named($2)
+        print "  labels:"
+        print "    {{- include \"mode-operator.labels\" . | nindent 4 }}"
+        done = 1
+        next
+      }
+      /^  policyName: / { print "  policyName: " named($2); next }
+      { print }
+    ' "$src"
+  } >"$dest"
+}
+
+mkdir -p "$CHART/crd" "$CHART/rbac" "$CHART/admission"
 # Remove what an earlier run generated, so a role or CRD dropped from config/
 # also leaves the chart. Hand-written templates don't have the header.
-for f in "$CHART"/crd/*.yaml "$CHART"/rbac/*.yaml; do
+for f in "$CHART"/crd/*.yaml "$CHART"/rbac/*.yaml "$CHART"/admission/*.yaml; do
   [[ -e $f ]] || continue
   if [[ $(head -n 1 "$f") == "$HEADER"* ]]; then rm "$f"; fi
 done
@@ -110,3 +138,6 @@ role ClusterRole config/rbac/clustermodedefinition_admin_role.yaml clustermodede
 role ClusterRole config/mode-manager/rbac/clustermode_writer_role.yaml clustermode-writer \
   "$CHART/rbac/clustermode-writer-clusterrole.yaml" '.Values.modeManager.clusterModes'
 with_resource_names "$CHART/rbac/clustermode-writer-clusterrole.yaml" '.Values.modeManager.clusterModes'
+
+admission config/admission/transitions_policy.yaml "$CHART/admission/transitions-policy.yaml"
+admission config/admission/transitions_policy_binding.yaml "$CHART/admission/transitions-policy-binding.yaml"

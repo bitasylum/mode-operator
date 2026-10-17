@@ -130,6 +130,29 @@ fi
 grep -q "must be one of the modes in the ClusterModeDefinition" <<<"$out" ||
   fail "the patch failed for another reason: $out"
 
+step "checking that the transitions admission policy is bound and type-checks against the CRD"
+[[ $(k get validatingadmissionpolicybinding mode-operator-transitions -o jsonpath='{.spec.policyName}') == \
+  mode-operator-transitions ]] || fail "the binding doesn't name the policy"
+# The policy was created with the CRDs, and the API server skips type checking
+# while it can't find a CRD's schema, so check unbound copies made now that the
+# CRDs are established: the chart's, which must have no warnings, and one with
+# a wrong field, which must have one, to show the check runs at all.
+# typecheck NAME SED: create an unbound copy of the chart's policy named NAME,
+# edited by SED, and print its type-checking warnings.
+typecheck() {
+  local name=$1 edit=$2
+  k get validatingadmissionpolicy mode-operator-transitions -o json |
+    jq --arg name "$name" '{apiVersion, kind, metadata: {name: $name}, spec}' |
+    sed "$edit" | k create -f - >/dev/null
+  k wait "validatingadmissionpolicy/$name" --for=jsonpath='{.status.observedGeneration}'=1 --timeout 1m >/dev/null
+  k get validatingadmissionpolicy "$name" -o jsonpath='{.status.typeChecking.expressionWarnings}'
+  k delete validatingadmissionpolicy "$name" >/dev/null
+}
+warnings=$(typecheck typecheck-copy '')
+[[ -z $warnings ]] || fail "the admission policy has type-checking warnings: $warnings"
+warnings=$(typecheck typecheck-control 's/status\.observedGeneration ==/status.noSuchField ==/')
+[[ $warnings == *noSuchField* ]] || fail "type checking didn't catch a wrong field: '$warnings'"
+
 step "uninstalling, which must leave the CRDs and every object in place"
 h uninstall mode-operator -n "$NS" --wait
 k get crd clustermodes.mode.bitasylum.org clustermodedefinitions.mode.bitasylum.org
