@@ -29,7 +29,8 @@ const (
 	// ConditionReady is True when every workload that isn't Invalid is Settled.
 	ConditionReady = "Ready"
 	// ConditionDegraded is True when any workload has an annotation error or is
-	// Stalled.
+	// Stalled, or when the mode can't be applied at all because the definition
+	// is missing or doesn't list it.
 	ConditionDegraded = "Degraded"
 )
 
@@ -239,8 +240,8 @@ type ClusterModeStatus struct {
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 63",message="name must be 63 characters or fewer, so that it can be used as a label value"
 // +kubebuilder:validation:XValidation:rule="self.spec.mode == oldSelf.spec.mode || !has(self.status) || !has(self.status.modes) || self.spec.mode in self.status.modes",message="spec.mode must be one of the modes in the ClusterModeDefinition (status.modes)",fieldPath=".spec.mode"
 // +kubebuilder:printcolumn:name="Mode",type=string,JSONPath=`.spec.mode`
-// +kubebuilder:printcolumn:name="Applied",type=string,JSONPath=`.status.conditions[?(@.type=="Applied")].status`
-// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Applied",type=string,JSONPath=`.status.conditions[?(@.type=="Applied")].reason`
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Workloads",type=integer,JSONPath=`.status.workloads.total`
 // +kubebuilder:printcolumn:name="Settled",type=integer,JSONPath=`.status.workloads.settled`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

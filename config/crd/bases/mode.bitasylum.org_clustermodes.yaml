@@ -18,10 +18,10 @@ spec:
     - jsonPath: .spec.mode
       name: Mode
       type: string
-    - jsonPath: .status.conditions[?(@.type=="Applied")].status
+    - jsonPath: .status.conditions[?(@.type=="Applied")].reason
       name: Applied
       type: string
-    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
       name: Ready
       type: string
     - jsonPath: .status.workloads.total
