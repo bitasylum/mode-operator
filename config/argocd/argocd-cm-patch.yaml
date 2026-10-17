@@ -1,0 +1,25 @@
+# Merge into argocd-cm (design 8). It applies to every Application but only
+# ignores the fields that mode-operator's field manager owns, so workloads
+# that don't follow a ClusterMode keep the normal replicas behaviour. The
+# KubeVirt entries are harmless on a cluster without KubeVirt.
+#
+# Never add a global jsonPointers ignore for /spec/replicas: it would freeze
+# replicas for every workload, not just the ones mode-operator scales.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  resource.customizations.ignoreDifferences.apps_Deployment: |
+    managedFieldsManagers:
+      - mode-operator
+  resource.customizations.ignoreDifferences.apps_StatefulSet: |
+    managedFieldsManagers:
+      - mode-operator
+  resource.customizations.ignoreDifferences.kubevirt.io_VirtualMachine: |
+    managedFieldsManagers:
+      - mode-operator
+  resource.customizations.ignoreDifferences.pool.kubevirt.io_VirtualMachinePool: |
+    managedFieldsManagers:
+      - mode-operator

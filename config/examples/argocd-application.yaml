@@ -1,0 +1,25 @@
+# An Argo CD Application holding workloads that mode-operator scales. Use it
+# with config/argocd/argocd-cm-patch.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingest
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://git.example.com/platform/apps.git
+    path: ingest
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ingest
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Required: without it, ignoreDifferences only hides the difference,
+      # and every sync writes Git's replicas over mode-operator's.
+      - RespectIgnoreDifferences=true
+      - ServerSideApply=true

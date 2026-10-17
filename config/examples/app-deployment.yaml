@@ -1,0 +1,40 @@
+# A workload that follows ClusterMode "default". The label and annotations go
+# on the Deployment's own metadata, not the pod template, which would roll
+# the pods whenever they changed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest-worker
+  namespace: ingest
+  labels:
+    # Opt in, and follow ClusterMode "default".
+    mode.bitasylum.org/clustermode: default
+  annotations:
+    # 3 replicas in normal, 6 in peak, 1 in offpeak, and 0 in every other
+    # mode. "*=N" sets the count for modes that aren't listed. Every mode
+    # named must be in the ClusterMode's definition.
+    mode.bitasylum.org/replicas: "normal=3,peak=6,offpeak=1"
+    # Optional: wait this long before scaling to 0. Going back to a mode
+    # with replicas within the wait cancels the scale-down. It never delays
+    # a scale-up, or a scale-down to a count above 0.
+    mode.bitasylum.org/scale-to-zero-delay: "5m"
+    # Optional: how long the pods may take to become ready before the
+    # workload counts as Stalled. The default is the controller's
+    # --settle-timeout, 10m.
+    mode.bitasylum.org/settle-timeout: "15m"
+spec:
+  # Used only when the Deployment is created. With RespectIgnoreDifferences,
+  # Argo CD uses this value on create and the live value after that. 0 keeps
+  # pods from starting before mode-operator applies the current mode.
+  replicas: 0
+  selector:
+    matchLabels:
+      app: ingest-worker
+  template:
+    metadata:
+      labels:
+        app: ingest-worker
+    spec:
+      containers:
+        - name: worker
+          image: registry.example.com/ingest-worker:1.4.2
