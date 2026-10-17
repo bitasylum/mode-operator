@@ -130,18 +130,30 @@ func TestProgress(t *testing.T) {
 		ready              int32
 		wantReached        bool
 	}{
-		{name: "all ready", replicas: ptr.To[int32](3), generation: 2, observedGeneration: 2,
-			statusReplicas: 3, ready: 3, wantReached: true},
-		{name: "some ready", replicas: ptr.To[int32](3), generation: 2, observedGeneration: 2,
-			statusReplicas: 3, ready: 2},
-		{name: "scaling down, extra pods still counted", replicas: ptr.To[int32](1), generation: 2, observedGeneration: 2,
-			statusReplicas: 3, ready: 1},
-		{name: "status from an older generation", replicas: ptr.To[int32](3), generation: 3, observedGeneration: 2,
-			statusReplicas: 3, ready: 3},
-		{name: "scaled to zero", replicas: ptr.To[int32](0), generation: 4, observedGeneration: 4,
-			statusReplicas: 0, ready: 0, wantReached: true},
-		{name: "nil replicas means 1", replicas: nil, generation: 1, observedGeneration: 1,
-			statusReplicas: 1, ready: 1, wantReached: true},
+		{
+			name: "all ready", replicas: ptr.To[int32](3), generation: 2, observedGeneration: 2,
+			statusReplicas: 3, ready: 3, wantReached: true,
+		},
+		{
+			name: "some ready", replicas: ptr.To[int32](3), generation: 2, observedGeneration: 2,
+			statusReplicas: 3, ready: 2,
+		},
+		{
+			name: "scaling down, extra pods still counted", replicas: ptr.To[int32](1), generation: 2, observedGeneration: 2,
+			statusReplicas: 3, ready: 1,
+		},
+		{
+			name: "status from an older generation", replicas: ptr.To[int32](3), generation: 3, observedGeneration: 2,
+			statusReplicas: 3, ready: 3,
+		},
+		{
+			name: "scaled to zero", replicas: ptr.To[int32](0), generation: 4, observedGeneration: 4,
+			statusReplicas: 0, ready: 0, wantReached: true,
+		},
+		{
+			name: "nil replicas means 1", replicas: nil, generation: 1, observedGeneration: 1,
+			statusReplicas: 1, ready: 1, wantReached: true,
+		},
 	}
 	for _, rk := range replicaKinds {
 		for _, c := range cases {

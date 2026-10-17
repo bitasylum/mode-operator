@@ -99,7 +99,8 @@ type report struct {
 // Every time it writes is truncated to whole seconds, as the API server
 // stores them, so an unchanged status compares equal to the stored one.
 func summarize(cm *modev1alpha1.ClusterMode, def *modev1alpha1.ClusterModeDefinition, workloads []observedWorkload,
-	history map[string]workloadHistory, now time.Time, defaultSettleTimeout time.Duration) summary {
+	history map[string]workloadHistory, now time.Time, defaultSettleTimeout time.Duration,
+) summary {
 	nowTS := now.UTC().Truncate(time.Second)
 	st := modev1alpha1.ClusterModeStatus{
 		ObservedGeneration: cm.Generation,
@@ -172,7 +173,8 @@ func summarize(cm *modev1alpha1.ClusterMode, def *modev1alpha1.ClusterModeDefini
 // order, and the first that matches wins. It records what the next summary
 // needs to know about the workload in newHistory.
 func classify(w observedWorkload, mode string, modes sets.Set[string], modeChangedAt time.Time,
-	history, newHistory map[string]workloadHistory, now time.Time, defaultSettleTimeout time.Duration) report {
+	history, newHistory map[string]workloadHistory, now time.Time, defaultSettleTimeout time.Duration,
+) report {
 	ann := w.obj.GetAnnotations()
 	ua := parseUserAnnotations(ann, modes, w.kind.MaxCount())
 	cur := w.kind.Current(w.obj)

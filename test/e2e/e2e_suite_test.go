@@ -31,10 +31,8 @@ import (
 	"github.com/Audiobuzz/mode-operator/test/utils"
 )
 
-var (
-	// operatorImage is the image to be built and loaded for testing.
-	operatorImage = "example.com/mode-operator:v0.0.1"
-)
+// operatorImage is the image to be built and loaded for testing.
+var operatorImage = "example.com/mode-operator:v0.0.1"
 
 // TestE2E runs the e2e test suite to validate the solution in an isolated environment.
 // It needs Kind.

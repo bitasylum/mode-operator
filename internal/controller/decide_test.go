@@ -57,15 +57,19 @@ func TestDecide(t *testing.T) {
 			name: "scale to zero with a delay starts the countdown", mode: "standby", cur: 3, desired: 0,
 			delay: 5 * time.Minute, delayValid: true,
 			existing: map[string]string{AnnotationAppliedMode: "normal", AnnotationReplicasChangedAt: earlier},
-			want: decision{target: 3, appliedMode: "normal", pendingSince: nowTS, changedAt: earlier,
-				requeue: 5 * time.Minute, event: ReasonScaleToZeroPending},
+			want: decision{
+				target: 3, appliedMode: "normal", pendingSince: nowTS, changedAt: earlier,
+				requeue: 5 * time.Minute, event: ReasonScaleToZeroPending,
+			},
 		},
 		{
 			name: "still pending keeps the original start", mode: "standby", cur: 3, desired: 0,
 			delay: 5 * time.Minute, delayValid: true,
 			existing: map[string]string{AnnotationAppliedMode: "normal", AnnotationZeroPendingSince: ts(-2 * time.Minute)},
-			want: decision{target: 3, appliedMode: "normal", pendingSince: ts(-2 * time.Minute),
-				requeue: 3 * time.Minute},
+			want: decision{
+				target: 3, appliedMode: "normal", pendingSince: ts(-2 * time.Minute),
+				requeue: 3 * time.Minute,
+			},
 		},
 		{
 			name: "expired delay scales to zero and clears the pending start", mode: "standby", cur: 3, desired: 0,
@@ -76,8 +80,10 @@ func TestDecide(t *testing.T) {
 		{
 			name: "moving to a mode above zero cancels a pending scale to zero", mode: "normal", cur: 3, desired: 3,
 			delay: 5 * time.Minute, delayValid: true,
-			existing: map[string]string{AnnotationAppliedMode: "normal", AnnotationZeroPendingSince: ts(-time.Minute),
-				AnnotationReplicasChangedAt: earlier},
+			existing: map[string]string{
+				AnnotationAppliedMode: "normal", AnnotationZeroPendingSince: ts(-time.Minute),
+				AnnotationReplicasChangedAt: earlier,
+			},
 			want: decision{target: 3, appliedMode: "normal", changedAt: earlier, event: ReasonScaleToZeroCancelled},
 		},
 		{
@@ -93,22 +99,28 @@ func TestDecide(t *testing.T) {
 			name: "moving between two zero modes doesn't restart the countdown", mode: "maintenance", cur: 3, desired: 0,
 			delay: 5 * time.Minute, delayValid: true,
 			existing: map[string]string{AnnotationAppliedMode: "normal", AnnotationZeroPendingSince: ts(-4 * time.Minute)},
-			want: decision{target: 3, appliedMode: "normal", pendingSince: ts(-4 * time.Minute),
-				requeue: time.Minute},
+			want: decision{
+				target: 3, appliedMode: "normal", pendingSince: ts(-4 * time.Minute),
+				requeue: time.Minute,
+			},
 		},
 		{
 			name: "a pending start in the future restarts from now", mode: "standby", cur: 3, desired: 0,
 			delay: 5 * time.Minute, delayValid: true,
 			existing: map[string]string{AnnotationAppliedMode: "normal", AnnotationZeroPendingSince: ts(time.Hour)},
-			want: decision{target: 3, appliedMode: "normal", pendingSince: nowTS,
-				requeue: 5 * time.Minute},
+			want: decision{
+				target: 3, appliedMode: "normal", pendingSince: nowTS,
+				requeue: 5 * time.Minute,
+			},
 		},
 		{
 			name: "a malformed pending start restarts from now", mode: "standby", cur: 3, desired: 0,
 			delay: 5 * time.Minute, delayValid: true,
 			existing: map[string]string{AnnotationAppliedMode: "normal", AnnotationZeroPendingSince: "yesterday"},
-			want: decision{target: 3, appliedMode: "normal", pendingSince: nowTS,
-				requeue: 5 * time.Minute},
+			want: decision{
+				target: 3, appliedMode: "normal", pendingSince: nowTS,
+				requeue: 5 * time.Minute,
+			},
 		},
 		{
 			name: "already at zero needs no delay", mode: "standby", cur: 0, desired: 0,

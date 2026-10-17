@@ -61,7 +61,8 @@ func (d decision) annotations() map[string]string {
 // The delay only ever holds a scale to zero. While it runs, the workload keeps
 // its count and the mode it last applied.
 func decide(mode string, cur, desired int32, delay time.Duration, delayValid bool,
-	existing map[string]string, now time.Time) decision {
+	existing map[string]string, now time.Time,
+) decision {
 	d := decision{target: desired, appliedMode: mode}
 
 	if desired == 0 && cur > 0 {

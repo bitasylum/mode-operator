@@ -36,17 +36,25 @@ func TestParse(t *testing.T) {
 		want    map[string]int32
 		wantErr string
 	}{
-		{name: "listed modes, unlisted get 0", raw: "normal=3,peak=6",
-			want: map[string]int32{"normal": 3, "peak": 6, "offpeak": 0, "standby": 0}},
-		{name: "whitespace around entries, keys and values", raw: " normal = 2 , *=1 ",
-			want: map[string]int32{"normal": 2, "peak": 1, "maintenance": 1}},
-		{name: "wildcard before a listed mode", raw: "*=0,maintenance=1",
-			want: map[string]int32{"maintenance": 1, "normal": 0}},
+		{
+			name: "listed modes, unlisted get 0", raw: "normal=3,peak=6",
+			want: map[string]int32{"normal": 3, "peak": 6, "offpeak": 0, "standby": 0},
+		},
+		{
+			name: "whitespace around entries, keys and values", raw: " normal = 2 , *=1 ",
+			want: map[string]int32{"normal": 2, "peak": 1, "maintenance": 1},
+		},
+		{
+			name: "wildcard before a listed mode", raw: "*=0,maintenance=1",
+			want: map[string]int32{"maintenance": 1, "normal": 0},
+		},
 		{name: "wildcard only", raw: "*=4", want: map[string]int32{"normal": 4, "standby": 4}},
 		{name: "empty entries are ignored", raw: ",normal=1,,", want: map[string]int32{"normal": 1, "peak": 0}},
 		{name: "largest int32", raw: "normal=2147483647", want: map[string]int32{"normal": math.MaxInt32}},
-		{name: "VM counts of 0 and 1", raw: "normal=1,*=0", max: 1,
-			want: map[string]int32{"normal": 1, "peak": 0}},
+		{
+			name: "VM counts of 0 and 1", raw: "normal=1,*=0", max: 1,
+			want: map[string]int32{"normal": 1, "peak": 0},
+		},
 
 		{name: "empty", raw: "", wantErr: "no entries"},
 		{name: "only separators", raw: " , ,", wantErr: "no entries"},

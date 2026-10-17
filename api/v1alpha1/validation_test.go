@@ -403,8 +403,10 @@ var _ = Describe("ClusterMode transition rules", func() {
 	It("doesn't restrict a definition without transitions", func() {
 		deleteAfter(&modev1alpha1.ClusterMode{ObjectMeta: metav1.ObjectMeta{Name: name}})
 		Expect(applyAsModeManager(name, "standard", "normal")).To(Succeed())
-		setStatus(map[string]any{"modes": standardModes, "defaultMode": standby, "mode": "normal",
-			"conditions": ready("False")})
+		setStatus(map[string]any{
+			"modes": standardModes, "defaultMode": standby, "mode": "normal",
+			"conditions": ready("False"),
+		})
 		Expect(applyAsModeManager(name, "standard", "offpeak")).To(Succeed())
 	})
 })

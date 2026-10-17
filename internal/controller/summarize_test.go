@@ -95,76 +95,119 @@ func TestSummarizeStates(t *testing.T) {
 		since   string // RFC 3339, or "" for none
 		message string // substring
 	}{
-		{name: "settled", mode: "normal", w: deploy("web", 3, 3, 3, normal3),
-			state: modev1alpha1.WorkloadSettled},
-		{name: "missing replicas annotation", mode: "normal", w: deploy("web", 3, 3, 3, nil),
-			state: modev1alpha1.WorkloadInvalid, message: "but no mode.bitasylum.org/replicas annotation"},
-		{name: "invalid replicas annotation", mode: "normal",
+		{
+			name: "settled", mode: "normal", w: deploy("web", 3, 3, 3, normal3),
+			state: modev1alpha1.WorkloadSettled,
+		},
+		{
+			name: "missing replicas annotation", mode: "normal", w: deploy("web", 3, 3, 3, nil),
+			state: modev1alpha1.WorkloadInvalid, message: "but no mode.bitasylum.org/replicas annotation",
+		},
+		{
+			name: "invalid replicas annotation", mode: "normal",
 			w:     deploy("web", 3, 3, 3, map[string]string{AnnotationReplicas: "normal=x"}),
-			state: modev1alpha1.WorkloadInvalid, message: `entry "normal=x"`},
-		{name: "invalid delay blocking a scale to zero", mode: "standby",
+			state: modev1alpha1.WorkloadInvalid, message: `entry "normal=x"`,
+		},
+		{
+			name: "invalid delay blocking a scale to zero", mode: "standby",
 			w:     deploy("web", 3, 3, 3, with(normal3, AnnotationScaleToZeroDelay, "soon")),
-			state: modev1alpha1.WorkloadInvalid, desired: ptr.To[int32](0), message: "holding 3 replicas until it is fixed"},
-		{name: "invalid delay that blocks nothing", mode: "normal",
+			state: modev1alpha1.WorkloadInvalid, desired: ptr.To[int32](0), message: "holding 3 replicas until it is fixed",
+		},
+		{
+			name: "invalid delay that blocks nothing", mode: "normal",
 			w:     deploy("web", 3, 3, 3, with(normal3, AnnotationScaleToZeroDelay, "soon")),
-			state: modev1alpha1.WorkloadSettled},
-		{name: "pending scale to zero", mode: "standby",
+			state: modev1alpha1.WorkloadSettled,
+		},
+		{
+			name: "pending scale to zero", mode: "standby",
 			w: deploy("web", 3, 3, 3, with(normal3, AnnotationScaleToZeroDelay, "5m",
 				AnnotationZeroPendingSince, at(-time.Minute))),
 			state: modev1alpha1.WorkloadPending, desired: ptr.To[int32](0), since: at(-time.Minute),
-			message: "Scaling to 0 at " + at(4*time.Minute)},
-		{name: "applying a new mode", mode: "peak", w: deploy("web", 3, 3, 3, normal3),
+			message: "Scaling to 0 at " + at(4*time.Minute),
+		},
+		{
+			name: "applying a new mode", mode: "peak", w: deploy("web", 3, 3, 3, normal3),
 			state: modev1alpha1.WorkloadApplying, desired: ptr.To[int32](6), since: at(-time.Hour),
-			message: `Replicas are 3; mode "peak" wants 6`},
-		{name: "applying after drift has no known start", mode: "normal", w: deploy("web", 1, 1, 1, normal3),
-			state: modev1alpha1.WorkloadApplying, desired: ptr.To[int32](3)},
-		{name: "scaling up", mode: "normal",
+			message: `Replicas are 3; mode "peak" wants 6`,
+		},
+		{
+			name: "applying after drift has no known start", mode: "normal", w: deploy("web", 1, 1, 1, normal3),
+			state: modev1alpha1.WorkloadApplying, desired: ptr.To[int32](3),
+		},
+		{
+			name: "scaling up", mode: "normal",
 			w:     deploy("web", 3, 3, 1, with(normal3, AnnotationReplicasChangedAt, at(-time.Minute))),
 			state: modev1alpha1.WorkloadScaling, desired: ptr.To[int32](3), since: at(-time.Minute),
-			message: "1 of 3 replicas ready"},
-		{name: "scaling down", mode: "offpeak",
-			w: deploy("web", 0, 3, 3, map[string]string{AnnotationReplicas: "normal=3", AnnotationAppliedMode: "offpeak",
-				AnnotationReplicasChangedAt: at(-time.Minute)}),
+			message: "1 of 3 replicas ready",
+		},
+		{
+			name: "scaling down", mode: "offpeak",
+			w: deploy("web", 0, 3, 3, map[string]string{
+				AnnotationReplicas: "normal=3", AnnotationAppliedMode: "offpeak",
+				AnnotationReplicasChangedAt: at(-time.Minute),
+			}),
 			state: modev1alpha1.WorkloadScaling, desired: ptr.To[int32](0),
-			message: "3 replicas ready, waiting for the Deployment to settle at 0"},
-		{name: "stalled once the settle timeout has passed", mode: "normal",
+			message: "3 replicas ready, waiting for the Deployment to settle at 0",
+		},
+		{
+			name: "stalled once the settle timeout has passed", mode: "normal",
 			w:     deploy("web", 3, 3, 1, with(normal3, AnnotationReplicasChangedAt, at(-sumTimeout))),
 			state: modev1alpha1.WorkloadStalled, since: at(-sumTimeout),
-			message: "Not settled within the 10m0s settle timeout: 1 of 3 replicas ready"},
-		{name: "still scaling a second before the settle timeout", mode: "normal",
+			message: "Not settled within the 10m0s settle timeout: 1 of 3 replicas ready",
+		},
+		{
+			name: "still scaling a second before the settle timeout", mode: "normal",
 			w:     deploy("web", 3, 3, 1, with(normal3, AnnotationReplicasChangedAt, at(time.Second-sumTimeout))),
-			state: modev1alpha1.WorkloadScaling},
-		{name: "with no replicas-changed-at, the timeout runs from modeChangedAt", mode: "normal",
+			state: modev1alpha1.WorkloadScaling,
+		},
+		{
+			name: "with no replicas-changed-at, the timeout runs from modeChangedAt", mode: "normal",
 			w:     deploy("web", 3, 3, 1, normal3),
-			state: modev1alpha1.WorkloadStalled, since: at(-time.Hour)},
-		{name: "a workload's own settle timeout", mode: "normal",
+			state: modev1alpha1.WorkloadStalled, since: at(-time.Hour),
+		},
+		{
+			name: "a workload's own settle timeout", mode: "normal",
 			w: deploy("web", 3, 3, 1, with(normal3, AnnotationSettleTimeout, "30m",
 				AnnotationReplicasChangedAt, at(-20*time.Minute))),
-			state: modev1alpha1.WorkloadScaling},
-		{name: "an invalid settle timeout falls back to the default", mode: "normal",
+			state: modev1alpha1.WorkloadScaling,
+		},
+		{
+			name: "an invalid settle timeout falls back to the default", mode: "normal",
 			w: deploy("web", 3, 3, 1, with(normal3, AnnotationSettleTimeout, "0",
 				AnnotationReplicasChangedAt, at(-20*time.Minute))),
-			state: modev1alpha1.WorkloadStalled},
-		{name: "a rollout long after the workload settled gets the whole timeout", mode: "normal",
+			state: modev1alpha1.WorkloadStalled,
+		},
+		{
+			name: "a rollout long after the workload settled gets the whole timeout", mode: "normal",
 			w:       deploy("web", 3, 4, 3, with(normal3, AnnotationReplicasChangedAt, at(-24*time.Hour))),
 			history: map[string]workloadHistory{"Deployment/shop/web": {settledSince: sumNow.Add(-time.Hour)}},
-			state:   modev1alpha1.WorkloadScaling, since: at(0)},
-		{name: "the timeout runs from when the settled workload was first seen short", mode: "normal",
+			state:   modev1alpha1.WorkloadScaling, since: at(0),
+		},
+		{
+			name: "the timeout runs from when the settled workload was first seen short", mode: "normal",
 			w:       deploy("web", 3, 3, 2, with(normal3, AnnotationReplicasChangedAt, at(-24*time.Hour))),
 			history: map[string]workloadHistory{"Deployment/shop/web": {shortSince: sumNow.Add(-11 * time.Minute)}},
-			state:   modev1alpha1.WorkloadStalled, since: at(-11 * time.Minute)},
-		{name: "a brief spell at its count carries on the timeout already running", mode: "normal",
+			state:   modev1alpha1.WorkloadStalled, since: at(-11 * time.Minute),
+		},
+		{
+			name: "a brief spell at its count carries on the timeout already running", mode: "normal",
 			w: deploy("web", 3, 3, 2, with(normal3, AnnotationReplicasChangedAt, at(-24*time.Hour))),
 			history: map[string]workloadHistory{"Deployment/shop/web": {
-				settledSince: sumNow.Add(-10 * time.Second), shortSince: sumNow.Add(-11 * time.Minute)}},
-			state: modev1alpha1.WorkloadStalled, since: at(-11 * time.Minute)},
-		{name: "a brief spell at its count, with no earlier spell known, uses replicas-changed-at", mode: "normal",
+				settledSince: sumNow.Add(-10 * time.Second), shortSince: sumNow.Add(-11 * time.Minute),
+			}},
+			state: modev1alpha1.WorkloadStalled, since: at(-11 * time.Minute),
+		},
+		{
+			name: "a brief spell at its count, with no earlier spell known, uses replicas-changed-at", mode: "normal",
 			w:       deploy("web", 3, 3, 2, with(normal3, AnnotationReplicasChangedAt, at(-24*time.Hour))),
 			history: map[string]workloadHistory{"Deployment/shop/web": {settledSince: sumNow.Add(-10 * time.Second)}},
-			state:   modev1alpha1.WorkloadStalled, since: at(-24 * time.Hour)},
-		{name: "with no history, as after a restart, a stuck workload stays Stalled", mode: "normal",
+			state:   modev1alpha1.WorkloadStalled, since: at(-24 * time.Hour),
+		},
+		{
+			name: "with no history, as after a restart, a stuck workload stays Stalled", mode: "normal",
 			w:     deploy("web", 3, 3, 2, with(normal3, AnnotationReplicasChangedAt, at(-24*time.Hour))),
-			state: modev1alpha1.WorkloadStalled, since: at(-24 * time.Hour)},
+			state: modev1alpha1.WorkloadStalled, since: at(-24 * time.Hour),
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -252,8 +295,10 @@ func TestSummarizeUnsettledOrderAndCap(t *testing.T) {
 	)
 	// A StatefulSet sorts after a Deployment with the same since.
 	ws = append(ws, observedWorkload{kind: workload.StatefulSet{}, obj: &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: "a-stalled-sts", Namespace: "shop", Generation: 1,
-			Annotations: ann(AnnotationReplicasChangedAt, at(-30*time.Minute))},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "a-stalled-sts", Namespace: "shop", Generation: 1,
+			Annotations: ann(AnnotationReplicasChangedAt, at(-30*time.Minute)),
+		},
 		Spec:   appsv1.StatefulSetSpec{Replicas: ptr.To[int32](3)},
 		Status: appsv1.StatefulSetStatus{ObservedGeneration: 1, Replicas: 3, ReadyReplicas: 0},
 	}})
@@ -269,8 +314,10 @@ func TestSummarizeUnsettledOrderAndCap(t *testing.T) {
 	for _, u := range s.status.Unsettled[:6] {
 		got = append(got, u.Kind+"/"+u.Name)
 	}
-	want := []string{"Deployment/stalled-old", "StatefulSet/a-stalled-sts", "Deployment/stalled-new",
-		"Deployment/invalid", "Deployment/scaling-00", "Deployment/scaling-01"}
+	want := []string{
+		"Deployment/stalled-old", "StatefulSet/a-stalled-sts", "Deployment/stalled-new",
+		"Deployment/invalid", "Deployment/scaling-00", "Deployment/scaling-01",
+	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("order\n got: %v\nwant: %v", got, want)
 	}
@@ -287,8 +334,10 @@ func TestSummarizeConditions(t *testing.T) {
 	stalled := deploy("stalled", 3, 3, 1, normal3)
 	applying := deploy("applying", 1, 1, 1, normal3)
 	invalid := deploy("invalid", 3, 3, 3, map[string]string{AnnotationReplicas: "normal=x"})
-	pending := deploy("pending", 3, 3, 3, map[string]string{AnnotationReplicas: "normal=3",
-		AnnotationAppliedMode: "normal", AnnotationScaleToZeroDelay: "5m", AnnotationZeroPendingSince: at(-time.Minute)})
+	pending := deploy("pending", 3, 3, 3, map[string]string{
+		AnnotationReplicas:    "normal=3",
+		AnnotationAppliedMode: "normal", AnnotationScaleToZeroDelay: "5m", AnnotationZeroPendingSince: at(-time.Minute),
+	})
 
 	type cond struct{ status, reason string }
 	cases := []struct {
@@ -299,41 +348,59 @@ func TestSummarizeConditions(t *testing.T) {
 		applied, ready, degraded cond
 		message                  string // substring of any condition's message
 	}{
-		{name: "no workloads", cm: cmIn("normal"), def: sumDef,
-			applied: cond{"True", "NoWorkloads"}, ready: cond{"True", "NoWorkloads"}, degraded: cond{"False", "AsExpected"}},
-		{name: "every workload settled", cm: cmIn("normal"), def: sumDef,
+		{
+			name: "no workloads", cm: cmIn("normal"), def: sumDef,
+			applied: cond{"True", "NoWorkloads"}, ready: cond{"True", "NoWorkloads"}, degraded: cond{"False", "AsExpected"},
+		},
+		{
+			name: "every workload settled", cm: cmIn("normal"), def: sumDef,
 			ws:      []observedWorkload{settled("a", "normal", 3, "normal=3"), settled("b", "normal", 3, "normal=3")},
-			applied: cond{"True", "AllApplied"}, ready: cond{"True", "AllSettled"}, degraded: cond{"False", "AsExpected"}},
-		{name: "scaling", cm: cmIn("normal"), def: sumDef,
+			applied: cond{"True", "AllApplied"}, ready: cond{"True", "AllSettled"}, degraded: cond{"False", "AsExpected"},
+		},
+		{
+			name: "scaling", cm: cmIn("normal"), def: sumDef,
 			ws:      []observedWorkload{settled("a", "normal", 3, "normal=3"), scaling, scaling},
 			applied: cond{"True", "AllApplied"}, ready: cond{"False", "Scaling"}, degraded: cond{"False", "AsExpected"},
-			message: "2 of 3 workloads are scaling"},
-		{name: "stalled comes before applying", cm: cmIn("normal"), def: sumDef,
+			message: "2 of 3 workloads are scaling",
+		},
+		{
+			name: "stalled comes before applying", cm: cmIn("normal"), def: sumDef,
 			ws:      []observedWorkload{stalled, applying},
 			applied: cond{"False", "Applying"}, ready: cond{"False", "Stalled"}, degraded: cond{"True", "StalledWorkloads"},
-			message: "1 of 2 workloads is stalled"},
-		{name: "pending", cm: cmIn("standby"), def: sumDef,
+			message: "1 of 2 workloads is stalled",
+		},
+		{
+			name: "pending", cm: cmIn("standby"), def: sumDef,
 			ws:      []observedWorkload{pending},
 			applied: cond{"False", "ScaleToZeroPending"}, ready: cond{"False", "ScaleToZeroPending"},
-			degraded: cond{"False", "AsExpected"}},
-		{name: "invalid workloads are left out of Applied and Ready", cm: cmIn("normal"), def: sumDef,
+			degraded: cond{"False", "AsExpected"},
+		},
+		{
+			name: "invalid workloads are left out of Applied and Ready", cm: cmIn("normal"), def: sumDef,
 			ws:      []observedWorkload{settled("a", "normal", 3, "normal=3"), invalid},
 			applied: cond{"True", "AllApplied"}, ready: cond{"True", "AllSettled"}, degraded: cond{"True", "InvalidWorkloads"},
-			message: "1 invalid is left as it is"},
-		{name: "invalid and stalled", cm: cmIn("normal"), def: sumDef,
+			message: "1 invalid is left as it is",
+		},
+		{
+			name: "invalid and stalled", cm: cmIn("normal"), def: sumDef,
 			ws:      []observedWorkload{invalid, stalled},
 			applied: cond{"True", "AllApplied"}, ready: cond{"False", "Stalled"},
 			degraded: cond{"True", "InvalidAndStalledWorkloads"},
-			message:  "1 workload has annotation errors and 1 is stalled"},
-		{name: "definition not found", cm: cmIn("normal"), def: nil,
+			message:  "1 workload has annotation errors and 1 is stalled",
+		},
+		{
+			name: "definition not found", cm: cmIn("normal"), def: nil,
 			ws:      []observedWorkload{settled("a", "normal", 3, "normal=3")},
 			applied: cond{"False", "DefinitionNotFound"}, ready: cond{"False", "DefinitionNotFound"},
 			degraded: cond{"True", "DefinitionNotFound"},
-			message:  `ClusterModeDefinition "standard" not found`},
-		{name: "mode not in the definition", cm: cmIn("holiday"), def: sumDef,
+			message:  `ClusterModeDefinition "standard" not found`,
+		},
+		{
+			name: "mode not in the definition", cm: cmIn("holiday"), def: sumDef,
 			ws:      []observedWorkload{settled("a", "normal", 3, "normal=3")},
 			applied: cond{"False", "InvalidMode"}, ready: cond{"False", "InvalidMode"}, degraded: cond{"True", "InvalidMode"},
-			message: `Mode "holiday" isn't in ClusterModeDefinition "standard"`},
+			message: `Mode "holiday" isn't in ClusterModeDefinition "standard"`,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -455,8 +522,10 @@ func TestSummarizeRequeuesAtTheEarliestStall(t *testing.T) {
 }
 
 func TestSummarizeHistory(t *testing.T) {
-	normal3 := map[string]string{AnnotationReplicas: "normal=3", AnnotationAppliedMode: "normal",
-		AnnotationReplicasChangedAt: at(-24 * time.Hour)}
+	normal3 := map[string]string{
+		AnnotationReplicas: "normal=3", AnnotationAppliedMode: "normal",
+		AnnotationReplicasChangedAt: at(-24 * time.Hour),
+	}
 	key := "Deployment/shop/web"
 	step := func(h map[string]workloadHistory, ready int32, after time.Duration) summary {
 		return summarize(cmIn("normal"), sumDef, []observedWorkload{deploy("web", 3, 3, ready, normal3)},
@@ -619,8 +688,10 @@ func TestSummarizeCopiesTransitionsAndDefaultMode(t *testing.T) {
 }
 
 func TestSummarizeWaitsForPodsShuttingDown(t *testing.T) {
-	ann := map[string]string{AnnotationReplicas: "normal=3", AnnotationAppliedMode: "standby",
-		AnnotationReplicasChangedAt: at(-time.Minute)}
+	ann := map[string]string{
+		AnnotationReplicas: "normal=3", AnnotationAppliedMode: "standby",
+		AnnotationReplicasChangedAt: at(-time.Minute),
+	}
 	dep := observedWorkload{kind: workload.Deployment{}, obj: &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "shop", Generation: 2, Annotations: ann},
 		Spec:       appsv1.DeploymentSpec{Replicas: ptr.To[int32](0)},
@@ -658,14 +729,20 @@ func TestProgressMessage(t *testing.T) {
 		want    string
 	}{
 		{name: "scaling up", desired: 3, p: workload.Progress{Ready: 1}, want: "1 of 3 replicas ready"},
-		{name: "ready but not settled", desired: 3, p: workload.Progress{Ready: 3},
-			want: "3 replicas ready, waiting for the Deployment to settle at 3"},
+		{
+			name: "ready but not settled", desired: 3, p: workload.Progress{Ready: 3},
+			want: "3 replicas ready, waiting for the Deployment to settle at 3",
+		},
 		{name: "scaled to zero", desired: 0, p: workload.Progress{Stopping: 1}, want: "1 pod still to stop"},
 		// A StatefulSet going from 5 to 3 counts all 5 as ready until they stop.
-		{name: "scaling down", desired: 3, p: workload.Progress{Ready: 5, Stopping: 2},
-			want: "3 of 3 replicas ready; 2 pods still to stop"},
-		{name: "a pod stuck terminating", desired: 3, p: workload.Progress{Ready: 2, Stopping: 1},
-			want: "2 of 3 replicas ready; 1 pod still to stop"},
+		{
+			name: "scaling down", desired: 3, p: workload.Progress{Ready: 5, Stopping: 2},
+			want: "3 of 3 replicas ready; 2 pods still to stop",
+		},
+		{
+			name: "a pod stuck terminating", desired: 3, p: workload.Progress{Ready: 2, Stopping: 1},
+			want: "2 of 3 replicas ready; 1 pod still to stop",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

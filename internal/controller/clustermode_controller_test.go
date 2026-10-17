@@ -71,12 +71,16 @@ func markReady(obj client.Object) {
 		switch o := live.(type) {
 		case *appsv1.Deployment:
 			n := *o.Spec.Replicas
-			o.Status = appsv1.DeploymentStatus{ObservedGeneration: o.Generation, Replicas: n, ReadyReplicas: n,
-				UpdatedReplicas: n, AvailableReplicas: n}
+			o.Status = appsv1.DeploymentStatus{
+				ObservedGeneration: o.Generation, Replicas: n, ReadyReplicas: n,
+				UpdatedReplicas: n, AvailableReplicas: n,
+			}
 		case *appsv1.StatefulSet:
 			n := *o.Spec.Replicas
-			o.Status = appsv1.StatefulSetStatus{ObservedGeneration: o.Generation, Replicas: n, ReadyReplicas: n,
-				CurrentReplicas: n, UpdatedReplicas: n, AvailableReplicas: n}
+			o.Status = appsv1.StatefulSetStatus{
+				ObservedGeneration: o.Generation, Replicas: n, ReadyReplicas: n,
+				CurrentReplicas: n, UpdatedReplicas: n, AvailableReplicas: n,
+			}
 		}
 		g.Expect(k8sClient.Status().Update(ctx, live)).To(Succeed())
 	}).Should(Succeed())
@@ -394,8 +398,10 @@ var _ = Describe("ClusterMode status", func() {
 		Expect(metricSeries(modeChangesMetric, mode)).To(Equal(map[string]float64{"": 1}))
 
 		Expect(k8sClient.Delete(ctx, &modev1alpha1.ClusterMode{ObjectMeta: metav1.ObjectMeta{Name: mode}})).To(Succeed())
-		for _, c := range []prometheus.Collector{currentModeMetric, modeChangesMetric, workloadsMetric, replicasMetric,
-			invalidAnnotationsMetric, conditionMetric} {
+		for _, c := range []prometheus.Collector{
+			currentModeMetric, modeChangesMetric, workloadsMetric, replicasMetric,
+			invalidAnnotationsMetric, conditionMetric,
+		} {
 			Eventually(func() map[string]float64 { return metricSeries(c, mode) }).Should(BeEmpty())
 		}
 	})
