@@ -1,0 +1,96 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: clustermodedefinitions.mode.bitasylum.org
+spec:
+  group: mode.bitasylum.org
+  names:
+    kind: ClusterModeDefinition
+    listKind: ClusterModeDefinitionList
+    plural: clustermodedefinitions
+    singular: clustermodedefinition
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.defaultMode
+      name: Default
+      type: string
+    - jsonPath: .spec.modes
+      name: Modes
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ClusterModeDefinition lists the modes that the ClusterModes using it may be
+          in, and the mode to start in when there is no mode to restore. Admins write
+          it, normally through Git; the mode manager and mode-operator only read it.
+          It has no status.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec lists the allowed modes and the default mode.
+            properties:
+              defaultMode:
+                description: |-
+                  defaultMode is the mode the mode manager starts in when there is no mode
+                  to restore: when it first creates a ClusterMode, after a full cluster
+                  reboot, and when the stored mode is no longer allowed. It must be one of
+                  modes.
+                maxLength: 63
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              modes:
+                description: |-
+                  modes lists the modes that ClusterModes using this definition may be in.
+                  Names are unique. The limit of 32 keeps CEL rules that search the list
+                  within the API server's cost budget.
+                items:
+                  description: |-
+                    ModeName is the name of a mode. Mode names are lowercase DNS labels, which
+                    keeps them clear of the characters the replicas annotation uses: "*", "="
+                    and ",".
+                  maxLength: 63
+                  minLength: 1
+                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                  type: string
+                maxItems: 32
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: set
+            required:
+            - defaultMode
+            - modes
+            type: object
+            x-kubernetes-validations:
+            - message: defaultMode must be one of modes
+              rule: self.defaultMode in self.modes
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}

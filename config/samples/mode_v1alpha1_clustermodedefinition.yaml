@@ -4,6 +4,7 @@ metadata:
   labels:
     app.kubernetes.io/name: mode-operator
     app.kubernetes.io/managed-by: kustomize
-  name: clustermodedefinition-sample
+  name: standard
 spec:
-  # TODO(user): Add fields here
+  modes: [normal, peak, offpeak, maintenance, standby]
+  defaultMode: standby

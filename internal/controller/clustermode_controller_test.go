@@ -54,7 +54,10 @@ var _ = Describe("ClusterMode Controller", func() {
 						Name:      resourceName,
 						Namespace: resourceNamespace,
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: modev1alpha1.ClusterModeSpec{
+						Definition: "standard",
+						Mode:       "standby",
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

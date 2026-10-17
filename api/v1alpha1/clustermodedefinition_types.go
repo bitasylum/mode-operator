@@ -21,49 +21,44 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// ModeName is the name of a mode. Mode names are lowercase DNS labels, which
+// keeps them clear of the characters the replicas annotation uses: "*", "="
+// and ",".
+// +kubebuilder:validation:MinLength=1
+// +kubebuilder:validation:MaxLength=63
+// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+type ModeName string
 
-// ClusterModeDefinitionSpec defines the desired state of ClusterModeDefinition
+// ClusterModeDefinitionSpec lists the allowed modes and the default mode.
+// +kubebuilder:validation:XValidation:rule="self.defaultMode in self.modes",message="defaultMode must be one of modes"
 type ClusterModeDefinitionSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// modes lists the modes that ClusterModes using this definition may be in.
+	// Names are unique. The limit of 32 keeps CEL rules that search the list
+	// within the API server's cost budget.
+	// +required
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=32
+	Modes []ModeName `json:"modes"`
 
-	// foo is an example field of ClusterModeDefinition. Edit clustermodedefinition_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
-}
-
-// ClusterModeDefinitionStatus defines the observed state of ClusterModeDefinition.
-type ClusterModeDefinitionStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the ClusterModeDefinition resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// defaultMode is the mode the mode manager starts in when there is no mode
+	// to restore: when it first creates a ClusterMode, after a full cluster
+	// reboot, and when the stored mode is no longer allowed. It must be one of
+	// modes.
+	// +required
+	DefaultMode ModeName `json:"defaultMode"`
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="Default",type=string,JSONPath=`.spec.defaultMode`
+// +kubebuilder:printcolumn:name="Modes",type=string,JSONPath=`.spec.modes`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ClusterModeDefinition is the Schema for the clustermodedefinitions API
+// ClusterModeDefinition lists the modes that the ClusterModes using it may be
+// in, and the mode to start in when there is no mode to restore. Admins write
+// it, normally through Git; the mode manager and mode-operator only read it.
+// It has no status.
 type ClusterModeDefinition struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -71,13 +66,9 @@ type ClusterModeDefinition struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec defines the desired state of ClusterModeDefinition
+	// spec lists the allowed modes and the default mode.
 	// +required
 	Spec ClusterModeDefinitionSpec `json:"spec"`
-
-	// status defines the observed state of ClusterModeDefinition
-	// +optional
-	Status ClusterModeDefinitionStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true

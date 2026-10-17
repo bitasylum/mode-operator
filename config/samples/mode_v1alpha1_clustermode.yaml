@@ -1,9 +1,12 @@
+# In a real cluster the mode manager creates and writes this object. Apply it
+# by hand only on a test cluster, for example with mode-manager-stub absent.
 apiVersion: mode.bitasylum.org/v1alpha1
 kind: ClusterMode
 metadata:
   labels:
     app.kubernetes.io/name: mode-operator
     app.kubernetes.io/managed-by: kustomize
-  name: clustermode-sample
+  name: default
 spec:
-  # TODO(user): Add fields here
+  definition: standard
+  mode: standby

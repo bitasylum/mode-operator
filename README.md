@@ -9,4 +9,12 @@ The design is in the parent repo:
 [ship-core-mode-controller/docs/design.md](https://github.com/Audiobuzz/ship-core-mode-controller/blob/main/docs/design.md).
 Section 9.1 describes this repo's layout.
 
-Status: not yet scaffolded.
+Status: the `ClusterMode` and `ClusterModeDefinition` APIs and their validation
+are in place and tested. The controllers come next.
+
+## Development
+
+```sh
+make test   # unit tests and envtest suites (downloads API server binaries once)
+make lint
+```
