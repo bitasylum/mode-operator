@@ -43,10 +43,16 @@ kubectl label namespace mode-operator-system pod-security.kubernetes.io/enforce=
 helm install mode-operator ./dist/chart --namespace mode-operator-system
 ```
 
-- **No image is published yet.** Until a release is, build and push your own
-  with `make docker-build docker-push IMG=<registry>/mode-operator:<tag>` and
-  install with `--set image.repository=<registry>/mode-operator --set
-  image.tag=<tag>`.
+- **Images** are published to `ghcr.io/bitasylum/mode-operator` for amd64
+  and arm64, with an SBOM and signed build provenance: `main` and
+  `sha-<commit>` from every push to main, and `<version>` and
+  `<major>.<minor>` from each `v<version>` tag on main. There is no `latest`.
+  Until the first release, the chart's default tag (its appVersion) doesn't
+  exist, so install a build with `--set image.tag=sha-<commit>`. `main` moves
+  with every push, and the chart's `IfNotPresent` pull policy keeps whichever
+  `main` a node pulled first. Check an image's provenance with `gh attestation
+  verify oci://ghcr.io/bitasylum/mode-operator:<tag> --repo
+  bitasylum/mode-operator`.
 - **Use the release name `mode-operator`.** Objects are named
   `<release>-<component>` (with the chart name added if the release name
   doesn't contain it), so this gives the names used here and expected by the
