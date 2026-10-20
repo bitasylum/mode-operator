@@ -18,7 +18,7 @@ resources:
 - metrics_auth_role.yaml
 - metrics_auth_role_binding.yaml
 - metrics_reader_role.yaml
-# Roles for people and other tools (design 5.6). mode-operator doesn't use
+# Roles for people and other tools. mode-operator doesn't use
 # them itself. The mode manager's writer role is in config/mode-manager.
 - clustermode_maintainer_role.yaml
 - clustermode_viewer_role.yaml

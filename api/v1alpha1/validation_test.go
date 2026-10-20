@@ -34,11 +34,11 @@ import (
 )
 
 const (
-	// modeManager is the field manager the mode manager must use (design §6.1).
+	// modeManager is the field manager the mode manager must use.
 	modeManager = "mode-manager"
 	// maintainerTool is a stand-in for a maintainer's kubectl patch.
 	maintainerTool = "kubectl-patch"
-	// notInDefinition is the CEL message for the write-time check (design §5.2).
+	// notInDefinition is the CEL message for the write-time check.
 	notInDefinition = "spec.mode must be one of the modes in the ClusterModeDefinition"
 	// standby is the default mode in the test definitions.
 	standby = "standby"
@@ -209,7 +209,7 @@ var _ = Describe("ClusterMode validation", func() {
 	})
 
 	Context("before mode-operator has filled status.modes", func() {
-		It("accepts any well-formed mode, which is the gap the design documents", func() {
+		It("accepts any well-formed mode until mode-operator has written status", func() {
 			track("unchecked")
 			Expect(applyAsModeManager("unchecked", "standard", "anything")).To(Succeed())
 			Expect(applyAsModeManager("unchecked", "standard", "something-else")).To(Succeed())

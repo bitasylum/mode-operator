@@ -1,4 +1,4 @@
-# For maintainers who may change a ClusterMode's mode by hand (design 5.6),
+# For maintainers who may change a ClusterMode's mode by hand,
 # for example:
 #   kubectl patch clustermode default --type=merge -p '{"spec":{"mode":"maintenance"}}'
 # They can't create or delete ClusterModes or write their status. The API

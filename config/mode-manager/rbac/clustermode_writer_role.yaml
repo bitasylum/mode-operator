@@ -1,4 +1,4 @@
-# What the mode manager needs on the CRDs (design 6.4). The mode manager's own
+# What the mode manager needs on the CRDs. The mode manager's own
 # install binds its ServiceAccount to this role and grants the rest.
 #
 # Kubernetes can't limit create by name, so create is unrestricted. Every

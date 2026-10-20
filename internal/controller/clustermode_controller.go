@@ -61,7 +61,7 @@ type ClusterModeReconciler struct {
 	history map[string]map[string]workloadHistory
 }
 
-// mode-operator writes ClusterMode status only, never spec (design §7.7).
+// mode-operator writes ClusterMode status only, never spec.
 // +kubebuilder:rbac:groups=mode.bitasylum.org,resources=clustermodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=mode.bitasylum.org,resources=clustermodes/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=mode.bitasylum.org,resources=clustermodedefinitions,verbs=get;list;watch

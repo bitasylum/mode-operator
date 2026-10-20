@@ -4,7 +4,7 @@ metadata:
   labels:
     app.kubernetes.io/name: mode-operator
     app.kubernetes.io/managed-by: kustomize
-    # Enforce the restricted Pod Security Standard (design 7.6).
+    # Enforce the restricted Pod Security Standard.
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/warn: restricted
   name: system
@@ -23,7 +23,7 @@ spec:
     matchLabels:
       app.kubernetes.io/component: controller
       app.kubernetes.io/name: mode-operator
-  # Two replicas, one of them the leader (design 7.6).
+  # Two replicas, one of them the leader.
   replicas: 2
   template:
     metadata:

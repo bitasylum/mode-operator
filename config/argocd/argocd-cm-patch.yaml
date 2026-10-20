@@ -1,4 +1,4 @@
-# Merge into argocd-cm (design 8). It applies to every Application but only
+# Merge into argocd-cm. It applies to every Application but only
 # ignores the fields that mode-operator's field manager owns, so workloads
 # that don't follow a ClusterMode keep the normal replicas behaviour. The
 # KubeVirt entries are harmless on a cluster without KubeVirt.

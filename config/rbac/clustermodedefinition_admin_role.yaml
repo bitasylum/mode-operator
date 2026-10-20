@@ -1,5 +1,5 @@
 # Full access to ClusterModeDefinitions, for the admins or the GitOps service
-# account that manage the modes (design 5.6). Neither mode-operator nor the
+# account that manage the modes. Neither mode-operator nor the
 # mode manager can write definitions.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
