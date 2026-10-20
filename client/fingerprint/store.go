@@ -93,8 +93,8 @@ func ParseRecord(data map[string]string) Record {
 }
 
 // Store keeps a [Record] in a ConfigMap, written with server-side apply. It
-// needs create access to ConfigMaps in its namespace, and get and patch
-// access to its own ConfigMap.
+// needs create, get and patch access to its own ConfigMap, which can be
+// limited by name: server-side apply creates the ConfigMap by name.
 type Store struct {
 	client       kubernetes.Interface
 	namespace    string

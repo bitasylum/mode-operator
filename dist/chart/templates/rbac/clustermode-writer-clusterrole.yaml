@@ -11,15 +11,10 @@ rules:
   - mode.bitasylum.org
   resources:
   - clustermodes
-  verbs:
-  - create
-- apiGroups:
-  - mode.bitasylum.org
-  resources:
-  - clustermodes
   resourceNames:
   {{- toYaml .Values.modeManager.clusterModes | nindent 2 }}
   verbs:
+  - create
   - get
   - list
   - watch

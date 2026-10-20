@@ -319,7 +319,9 @@ mode, such as an orchestration server. The contract, in short:
 - Write `spec.mode`, `spec.definition` and the label
   `mode.bitasylum.org/writer` with server-side apply, field manager
   `mode-manager` and `Force`, in every apply. Create the ClusterMode if it
-  doesn't exist.
+  doesn't exist, with that apply: the writer role allows creating only the
+  ClusterModes it names, which server-side apply does by name, so a plain
+  create is refused.
 - Write the mode before broadcasting it, use only modes from the definition,
   and never write `status`.
 - If the definition has `transitions`, move only along them, and only once
@@ -368,7 +370,7 @@ with `jsonPointers: [/spec/replicas]`.
 | `mode-operator-clustermode-viewer` | anyone who needs to see the mode | read ClusterModes and their status |
 | `mode-operator-clustermodedefinition-viewer` | anyone who needs to see the modes | read definitions |
 | `mode-operator-clustermodedefinition-admin` | admins or the GitOps account that manages modes | full access to definitions |
-| `mode-operator-clustermode-writer` | the mode manager | create ClusterModes; read and write only those named in `modeManager.clusterModes`; read definitions. No status |
+| `mode-operator-clustermode-writer` | the mode manager | create, read and write only the ClusterModes named in `modeManager.clusterModes`; read definitions. No status |
 | `mode-operator-metrics-reader` | Prometheus | read `/metrics` |
 
 Neither mode-operator nor the mode manager can write definitions, and

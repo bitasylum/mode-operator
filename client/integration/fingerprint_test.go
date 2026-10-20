@@ -38,13 +38,12 @@ func fingerprintGrants(namespace, configMap string) []testenv.Grant {
 			APIGroups: []string{""}, Resources: []string{"nodes"},
 			Verbs: []string{"list", "watch"},
 		}}},
-		{Namespace: namespace, Rules: []rbacv1.PolicyRule{
-			{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"}},
-			{
-				APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{configMap},
-				Verbs: []string{"get", "patch"},
-			},
-		}},
+		// Server-side apply creates the ConfigMap by name, so create is
+		// limited by name too.
+		{Namespace: namespace, Rules: []rbacv1.PolicyRule{{
+			APIGroups: []string{""}, Resources: []string{"configmaps"}, ResourceNames: []string{configMap},
+			Verbs: []string{"create", "get", "patch"},
+		}}},
 	}
 }
 

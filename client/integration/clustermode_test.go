@@ -25,8 +25,13 @@ import (
 	"testing"
 	"time"
 
+	authorizationv1 "k8s.io/api/authorization/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/bitasylum/mode-operator/client/clustermode"
 	"github.com/bitasylum/mode-operator/client/integration/testenv"
@@ -95,6 +100,60 @@ func TestModeManagerWriterCreatesTheClusterMode(t *testing.T) {
 	}
 	if mode, ok := w.Current(); !ok || mode != "peak" {
 		t.Errorf("Current() = %q, %v", mode, ok)
+	}
+}
+
+// The writer role limits create by name too: server-side apply creates the
+// ClusterMode by name, and the API server authorizes that create by name.
+func TestModeManagerWriterCreatesOnlyItsClusterMode(t *testing.T) {
+	ctx := testContext(t)
+	f := newFixture(t, false)
+	cfg := f.writerUser(t)
+
+	other := fixture{name: env.Name("other"), definition: f.definition}
+	t.Cleanup(func() { env.DeleteClusterMode(context.Background(), other.name) })
+	kube, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]bool{f.name: true, other.name: false} {
+		review, err := kube.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx,
+			&authorizationv1.SelfSubjectAccessReview{Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Verb: "create", Group: clustermode.Group, Resource: "clustermodes", Name: name,
+				},
+			}}, metav1.CreateOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if review.Status.Allowed != want {
+			t.Errorf("create of ClusterMode %s allowed = %v, want %v", name, review.Status.Allowed, want)
+		}
+	}
+	// RBAC refuses the patch before the create is checked, so this guards
+	// against regressions rather than testing the create rule.
+	_, err = clustermode.NewModeManagerWriter(other.reader(t, cfg), f.definition, "mode-manager.test").
+		Apply(ctx, "standby")
+	wantReason(t, "creating another ClusterMode", err, clustermode.ReasonForbidden)
+
+	client, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": clustermode.Group + "/" + clustermode.Version,
+		"kind":       "ClusterMode",
+		"metadata":   map[string]any{"name": f.name},
+		"spec":       map[string]any{"definition": f.definition, "mode": "standby"},
+	}}
+	_, err = client.Resource(clustermode.ClusterModeResource).Create(ctx, u, metav1.CreateOptions{})
+	if !apierrors.IsForbidden(err) {
+		t.Errorf("a plain create of its own ClusterMode = %v, want Forbidden: only server-side apply names it", err)
+	}
+
+	if _, err := clustermode.NewModeManagerWriter(f.reader(t, cfg), f.definition, "mode-manager.test").
+		Apply(ctx, "standby"); err != nil {
+		t.Errorf("creating its own ClusterMode with server-side apply: %v", err)
 	}
 }
 

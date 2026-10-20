@@ -83,10 +83,10 @@ The roles named here are the ones mode-operator's chart installs.
 |---|---|
 | a reader | the `mode-operator-clustermode-viewer` role; `Reader.Rules` also needs `mode-operator-clustermodedefinition-viewer` until mode-operator has written the ClusterMode's status |
 | another writer | get, list, watch and patch on its ClusterMode only, with `resourceNames` |
-| the mode manager | the `mode-operator-clustermode-writer` role, which also allows reading ClusterModeDefinitions |
+| the mode manager | the `mode-operator-clustermode-writer` role: create, get, list, watch, update and patch on its ClusterMode only, and reading ClusterModeDefinitions |
 | `fingerprint.Take` | list on Nodes |
 | `fingerprint.Keeper` | list and watch on Nodes |
-| `fingerprint.Store` | create on ConfigMaps in its namespace, and get and patch on its own ConfigMap |
+| `fingerprint.Store` | create, get and patch on its own ConfigMap, with `resourceNames` |
 | `startup.NewRecorder` | create and patch on Events in the `default` namespace, where events about the cluster-scoped ClusterMode are recorded |
 
 A rule like this gives another writer what it needs:

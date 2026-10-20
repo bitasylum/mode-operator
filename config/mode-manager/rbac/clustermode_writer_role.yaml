@@ -1,10 +1,12 @@
 # What the mode manager needs on the CRDs. The mode manager's own
 # install binds its ServiceAccount to this role and grants the rest.
 #
-# Kubernetes can't limit create by name, so create is unrestricted. Every
-# other verb is limited to the ClusterModes named under resourceNames; to
-# list or watch one of them, use a metadata.name field selector. There is no
-# access to clustermodes/status, and definitions are read-only.
+# Every verb is limited to the ClusterModes named under resourceNames. Create
+# is too: the mode manager creates its ClusterMode with server-side apply,
+# which the API server authorizes as a create of that name, so a plain create
+# is refused. To list or watch one of them, use a metadata.name field
+# selector. There is no access to clustermodes/status, and definitions are
+# read-only.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -17,15 +19,10 @@ rules:
   - mode.bitasylum.org
   resources:
   - clustermodes
-  verbs:
-  - create
-- apiGroups:
-  - mode.bitasylum.org
-  resources:
-  - clustermodes
   resourceNames:
   - default
   verbs:
+  - create
   - get
   - list
   - watch
