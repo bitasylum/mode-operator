@@ -312,8 +312,9 @@ pods are still running. Alert on `Degraded`, not on `Ready`.
 
 ## For the mode manager
 
-The mode manager's side of the contract is in section 6 of the design. In
-short:
+The Go library in [client](client/README.md) implements the mode manager's
+side of the contract, and is also for other programs that read or change the
+mode, such as an orchestration server. The contract, in short:
 
 - Write `spec.mode`, `spec.definition` and the label
   `mode.bitasylum.org/writer` with server-side apply, field manager
@@ -469,6 +470,7 @@ sampling off.
 
 ```sh
 make test        # unit tests and envtest suites (downloads API server binaries once)
+make test-client # the client library's unit and integration tests
 make lint
 make vulncheck   # govulncheck, under the Go version the image is built with
 make shellcheck  # lint the shell scripts

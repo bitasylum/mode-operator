@@ -1,7 +1,11 @@
 version: 2
 updates:
+  # mode-operator, the client library, and the library's integration tests.
   - package-ecosystem: gomod
-    directory: /
+    directories:
+      - /
+      - /client
+      - /client/integration
     schedule:
       interval: weekly
     # Don't propose a release until it has been out a week. Security updates
@@ -14,12 +18,18 @@ updates:
     ignore:
       - dependency-name: "k8s.io/*"
         update-types: ["version-update:semver-minor"]
+    # A dependency is updated in all three modules in one PR: the integration
+    # tests use the library's go.mod through a replace, so they must move
+    # together. The library has no controller-runtime, so its k8s.io minimum
+    # only moves with the operator's.
     groups:
       kubernetes:
+        group-by: dependency-name
         patterns:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
       go:
+        group-by: dependency-name
         patterns:
           - "*"
 

@@ -6,10 +6,10 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 YEAR ?= $(shell date +%Y)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
-ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
+ifeq (,$(shell GOWORK=off go env GOBIN))
+GOBIN=$(shell GOWORK=off go env GOPATH)/bin
 else
-GOBIN=$(shell go env GOBIN)
+GOBIN=$(shell GOWORK=off go env GOBIN)
 endif
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
@@ -17,6 +17,11 @@ endif
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
+
+# The repository holds three Go modules: mode-operator at the root, the client
+# library in client/, and its integration tests in client/integration/. A
+# go.work file must never change how they build, so workspaces are off.
+export GOWORK = off
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -65,6 +70,18 @@ vet: ## Run go vet against code.
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+# The client library's unit tests, and its integration tests against the
+# CRDs, admission policy and roles in config/.
+.PHONY: test-client
+test-client: manifests setup-envtest ## Run the client library's tests.
+	@cd client && go mod tidy -diff >/dev/null || { \
+		echo "client/go.mod isn't tidy: run go mod tidy in client/"; exit 1; }
+	@cd client/integration && go mod tidy -diff >/dev/null || { \
+		echo "client/integration/go.mod isn't tidy: run go mod tidy in client/integration/"; exit 1; }
+	cd client && go vet ./... && go test ./...
+	cd client/integration && go vet ./... && \
+		KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test ./...
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The e2e tests build the image, load it into their own Kind cluster, and
@@ -127,10 +144,14 @@ test-chart: helm docker-build ## Install the chart on a new Kind cluster and che
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	"$(GOLANGCI_LINT)" run
+	cd client && "$(GOLANGCI_LINT)" run --config ../.golangci.yml ./...
+	cd client/integration && "$(GOLANGCI_LINT)" run --config ../../.golangci.yml ./...
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	"$(GOLANGCI_LINT)" run --fix
+	cd client && "$(GOLANGCI_LINT)" run --fix --config ../.golangci.yml ./...
+	cd client/integration && "$(GOLANGCI_LINT)" run --fix --config ../../.golangci.yml ./...
 
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
@@ -147,6 +168,7 @@ BUILD_GO_VERSION ?= $(shell hack/build-go-version.sh)
 vulncheck: govulncheck ## Check for known vulnerabilities that the code calls, under the image's Go version
 	@[ -n "$(BUILD_GO_VERSION)" ] || { echo "Could not read the Go version from the Dockerfile's golang image"; exit 1; }
 	GOTOOLCHAIN=go$(BUILD_GO_VERSION) "$(GOVULNCHECK)" ./...
+	cd client && GOTOOLCHAIN=go$(BUILD_GO_VERSION) "$(GOVULNCHECK)" ./...
 
 ##@ Build
 
@@ -339,5 +361,5 @@ ln -sf "$$(realpath "$(1)-$(3)")" "$(1)"
 endef
 
 define gomodver
-$(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
+$(shell GOWORK=off go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
 endef

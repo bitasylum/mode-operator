@@ -52,10 +52,14 @@ linters:
           - dupl
           - lll
         path: internal/*
-      # Table-driven tests repeat literals such as "normal=3" on purpose.
+      # Table-driven tests repeat literals such as "normal=3" on purpose,
+      # and the client test helpers repeat object field names.
       - linters:
           - goconst
         path: _test\.go
+      - linters:
+          - goconst
+        path: client/integration/
     paths:
       - third_party$
       - builtin$

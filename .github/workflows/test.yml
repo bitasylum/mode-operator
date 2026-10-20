@@ -36,3 +36,34 @@ jobs:
         run: |
           go mod tidy
           make test
+
+  # The client library, in parallel with the operator's own tests.
+  test-client:
+    permissions:
+      contents: read
+    name: Client library
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the image's Go version
+        id: go
+        run: |
+          version=$(hack/build-go-version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache-dependency-path: |
+            go.sum
+            client/go.sum
+            client/integration/go.sum
+
+      - name: Running Tests
+        run: make test-client

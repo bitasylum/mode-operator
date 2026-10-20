@@ -12,3 +12,6 @@
 # Re-include Go module files
 !go.mod
 !go.sum
+
+# The client library and its tests are separate modules, not part of the image.
+client/**
