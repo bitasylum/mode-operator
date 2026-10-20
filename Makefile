@@ -143,19 +143,19 @@ test-chart: helm docker-build ## Install the chart on a new Kind cluster and che
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
-	"$(GOLANGCI_LINT)" run
-	cd client && "$(GOLANGCI_LINT)" run --config ../.golangci.yml ./...
-	cd client/integration && "$(GOLANGCI_LINT)" run --config ../../.golangci.yml ./...
+	"$(GOLANGCI_LINT_CUSTOM)" run
+	cd client && "$(GOLANGCI_LINT_CUSTOM)" run --config ../.golangci.yml ./...
+	cd client/integration && "$(GOLANGCI_LINT_CUSTOM)" run --config ../../.golangci.yml ./...
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
-	"$(GOLANGCI_LINT)" run --fix
-	cd client && "$(GOLANGCI_LINT)" run --fix --config ../.golangci.yml ./...
-	cd client/integration && "$(GOLANGCI_LINT)" run --fix --config ../../.golangci.yml ./...
+	"$(GOLANGCI_LINT_CUSTOM)" run --fix
+	cd client && "$(GOLANGCI_LINT_CUSTOM)" run --fix --config ../.golangci.yml ./...
+	cd client/integration && "$(GOLANGCI_LINT_CUSTOM)" run --fix --config ../../.golangci.yml ./...
 
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
-	"$(GOLANGCI_LINT)" config verify
+	"$(GOLANGCI_LINT_CUSTOM)" config verify
 
 .PHONY: shellcheck
 shellcheck: shellcheck-install ## Lint the shell scripts with shellcheck
@@ -251,6 +251,9 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+# golangci-lint built with the plugins in .custom-gcl.yml, which also names
+# the golangci-lint version. A change to that file builds a new one.
+GOLANGCI_LINT_CUSTOM = $(LOCALBIN)/golangci-lint-custom-$(shell sha256sum .custom-gcl.yml | cut -c1-12)
 GOVULNCHECK ?= $(LOCALBIN)/govulncheck
 HELM ?= $(LOCALBIN)/helm
 
@@ -268,7 +271,8 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   [ -n "$$v" ] || { echo "Set ENVTEST_K8S_VERSION manually (k8s.io/api replace has no tag)" >&2; exit 1; }; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
-GOLANGCI_LINT_VERSION ?= v2.15.0
+# The version .custom-gcl.yml builds with the plugins.
+GOLANGCI_LINT_VERSION ?= $(shell sed -n 's/^version: //p' .custom-gcl.yml)
 GOVULNCHECK_VERSION ?= v1.9.0
 # The sha256 of each release tarball, as GitHub reports it for the asset.
 SHELLCHECK_VERSION ?= v0.11.0
@@ -335,14 +339,12 @@ kind: $(LOCALBIN) ## Download kind locally, for CI; locally, the kind on PATH is
 	$(call go-install-tool,$(LOCALBIN)/kind,sigs.k8s.io/kind,$(KIND_VERSION))
 
 .PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
-$(GOLANGCI_LINT): $(LOCALBIN)
+golangci-lint: $(GOLANGCI_LINT_CUSTOM) ## Download golangci-lint and build it with its plugins, if necessary.
+$(GOLANGCI_LINT_CUSTOM): | $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
-	@test -f .custom-gcl.yml && { \
-		echo "Building custom golangci-lint with plugins..." && \
-		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
-		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \
-	} || true
+	@echo "Building golangci-lint with the plugins in .custom-gcl.yml"
+	rm -f "$(LOCALBIN)"/golangci-lint-custom-*
+	"$(GOLANGCI_LINT)" custom --destination "$(LOCALBIN)" --name "$(notdir $@)"
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
