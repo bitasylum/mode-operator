@@ -4,7 +4,7 @@
 # CI and make vulncheck use the Go that builds the image. The builder runs on
 # the build machine's platform and cross-compiles for the target, so building
 # for another architecture needs no emulation.
-FROM --platform=$BUILDPLATFORM golang:1.26.10@sha256:5c3f3f28a273c9b61698b2d34f18375929790ab1f1d3835d032d21e2b31eae0c AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.10@sha256:672c944cfd07599b5f1bb179869270cdc94c6254e41db4d431259693cb286b82 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
